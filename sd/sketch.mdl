@@ -1,0 +1,457 @@
+{UTF-8}
+rent=
+	(Insite High Income Population * 80 + Insite Low Income Population * 50) * RENT PER M2
+	~	$
+	~		|
+
+RENT PER M2=
+	30
+	~	$/m2
+	~		|
+
+affordable investment ratio=
+	affordable investment ratio lookup(TAX RETURN RATIO FOR AFFORDABLE RESIDENCE)
+	~	Dmnl
+	~		|
+
+affordable investment ratio lookup(
+	[(0,0)-(1,1)],(0,0),(0.1,0.05),(0.3,0.2),(0.5,0.4),(0.75,0.5),(1,0.6))
+	~	Dmnl
+	~		|
+
+move in high income population=
+	MIN(move in prob for high income people * Outsite High Income Population, INTEGER(vacant normal residence\
+		 / 80) )
+	~	people
+	~		|
+
+developer expenditure=
+	newly built normal residence * BUILDING UNIT COST + newly built affordable residence\
+		 * BUILDING UNIT COST + property tax
+	~	$
+	~		|
+
+move in prob for high income people=
+	move in prob lookup for high income people(total insite population)
+	~	Dmnl
+	~		|
+
+move in prob for low income people=
+	move in prob lookup for low income people(SUBSIDY PER LOW INCOME PERSON)
+	~	Dmnl
+	~		|
+
+diversity=
+	 - LN(Insite High Income Population / total insite population) * (Insite High Income Population\
+		 / total insite population) - LN(Insite Low Income Population / total insite population\
+		) * (Insite Low Income Population / total insite population)
+	~	
+	~		|
+
+move in prob lookup for low income people(
+	[(0,0)-(3000,1)],(0,0),(300,0.1),(600,0.2),(1200,0.5),(2100,0.8),(3000,1))
+	~	Dmnl
+	~		|
+
+new residence to be built=
+	IF THEN ELSE( Developer Finance > 10000 , 500 , 0)
+	~	m2
+	~		|
+
+newly built affordable residence=
+	new residence to be built * affordable investment ratio
+	~	m2
+	~		|
+
+newly built normal residence=
+	new residence to be built * (1 - affordable investment ratio)
+	~	m2
+	~		|
+
+occupancy rate for affordable residence=
+	1 - vacant affordable residence / Insite Affordable Residence
+	~	Dmnl
+	~		|
+
+subsidies for low income people=
+	SUBSIDY PER LOW INCOME PERSON * Insite Low Income Population
+	~	$
+	~		|
+
+SUBSIDY PER LOW INCOME PERSON=
+	50
+	~	$
+	~		|
+
+property tax=
+	Insite Affordable Residence * PROPERTY TAX RATE * (1 - TAX RETURN RATIO FOR AFFORDABLE RESIDENCE\
+		) + Insite Normal Residence * PROPERTY TAX RATE
+	~	
+	~		|
+
+PROPERTY TAX RATE=
+	10
+	~	$/m2
+	~		|
+
+TAX RETURN RATIO FOR AFFORDABLE RESIDENCE=
+	0.3
+	~	Dmnl
+	~		|
+
+move in prob lookup for high income people(
+	[(0,0)-(30000,1)],(0,0.2),(5000,0.2),(7000,0.1),(10000,0.05),(12000,0.02),(15000,0),\
+		(30000,0))
+	~	Dmnl
+	~		|
+
+total occupancy rate=
+	1 - (vacant affordable residence + vacant normal residence) / (Insite Affordable Residence\
+		 + Insite Normal Residence)
+	~	Dmnl
+	~		|
+
+move in low income population=
+	MIN( INTEGER( move in prob for low income people * Outside Low Income Population ) ,\
+		 INTEGER( vacant affordable residence / 50 ) )
+	~	people
+	~		|
+
+Insite High Income Population= INTEG (
+	move in high income population,
+		initial instie high income population)
+	~	people
+	~		|
+
+income tax=
+	INCOME TAX RATE * Insite High Income Population + INCOME TAX RATE * Insite Low Income Population
+	~	$
+	~		|
+
+initial affordable residence=
+	500 * 50 * 1.05
+	~	m2
+	~		|
+
+FIXED EXPENDITURE=
+	150000
+	~	$
+	~		|
+
+initial outside high income population=
+	100
+	~	people
+	~		|
+
+INCOME TAX RATE=
+	10
+	~	$/people
+	~		|
+
+initial instie high income population=
+	100
+	~	people
+	~		|
+
+Outsite High Income Population= INTEG (
+	-move in high income population,
+		initial outside high income population)
+	~	people
+	~		|
+
+vacant normal residence=
+	Insite Normal Residence - INTEGER( Insite High Income Population * 80 )
+	~	m2
+	~		|
+
+initial outside low income population=
+	200
+	~	people
+	~		|
+
+Insite Affordable Residence= INTEG (
+	newly built affordable residence,
+		initial affordable residence)
+	~	m2
+	~		|
+
+Outside Low Income Population= INTEG (
+	-move in low income population,
+		initial outside low income population)
+	~	people
+	~		|
+
+vacant affordable residence=
+	Insite Affordable Residence - INTEGER( Insite Low Income Population * 50 )
+	~	m2
+	~		|
+
+total insite population=
+	Insite High Income Population+Insite Low Income Population
+	~	people
+	~		|
+
+BUILDING UNIT COST=
+	6000
+	~	$/m2
+	~		|
+
+Developer Finance= INTEG (
+	developer revenue-developer expenditure,
+		initial developer finance)
+	~	$
+	~		|
+
+developer revenue=
+	rent
+	~	$
+	~		|
+
+government expenditure=
+	FIXED EXPENDITURE+subsidies for low income people
+	~	$
+	~		|
+
+Government Finance= INTEG (
+	government revenue-government expenditure,
+		initial government finance)
+	~	$
+	~		|
+
+government revenue=
+	income tax + property tax
+	~	$
+	~		|
+
+initial developer finance=
+	500000
+	~	$
+	~		|
+
+initial government finance=
+	1e+006
+	~	$
+	~		|
+
+initial insite low income population=
+	500
+	~	people
+	~		|
+
+initial normal residence=
+	100 * 80
+	~	m2
+	~		|
+
+Insite Low Income Population= INTEG (
+	move in low income population,
+		initial insite low income population)
+	~	people
+	~		|
+
+Insite Normal Residence= INTEG (
+	newly built normal residence,
+		initial normal residence)
+	~	m2
+	~		|
+
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+
+FINAL TIME  = 16
+	~	Quarter
+	~	The final time for the simulation.
+	|
+
+INITIAL TIME  = 0
+	~	Quarter
+	~	The initial time for the simulation.
+	|
+
+SAVEPER  = 
+        TIME STEP 
+	~	Quarter [0,?]
+	~	The frequency with which output is stored.
+	|
+
+TIME STEP  = 1
+	~	Quarter [0,?]
+	~	The time step for the simulation.
+	|
+
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
+*View 1
+$192-192-192,0,Times New Roman|12||0-0-0|0-0-0|0-0-255|-1--1--1|-1--1--1|96,96,80,0
+10,1,Government Finance,887,66,71,26,3,131,0,0,0,0,0,0
+12,2,48,625,65,10,8,0,3,0,0,-1,0,0,0
+1,3,5,1,4,0,0,22,0,0,0,-1--1--1,,1|(757,67)|
+1,4,5,2,100,0,0,22,0,0,0,-1--1--1,,1|(660,67)|
+11,5,48,692,67,6,8,34,3,0,0,1,0,0,0
+10,6,government revenue,692,95,69,20,40,131,0,0,-1,0,0,0
+12,7,48,1169,65,10,8,0,3,0,0,-1,0,0,0
+1,8,10,7,4,0,0,22,0,0,0,-1--1--1,,1|(1111,65)|
+1,9,10,1,100,0,0,22,0,0,0,-1--1--1,,1|(1005,65)|
+11,10,48,1058,65,6,8,34,3,0,0,1,0,0,0
+10,11,government expenditure,1058,93,106,20,40,131,0,0,-1,0,0,0
+10,12,initial government finance,885,18,82,21,8,131,1,0,0,0,0,0
+1,13,12,1,0,0,0,0,0,64,1,-1--1--1,,1|(885,32)|
+10,14,Developer Finance,921,758,71,27,3,131,0,0,0,0,0,0
+12,15,48,645,759,10,8,0,3,0,0,-1,0,0,0
+1,16,18,14,4,0,0,22,0,0,0,-1--1--1,,1|(802,759)|
+1,17,18,15,100,0,0,22,0,0,0,-1--1--1,,1|(698,759)|
+11,18,48,748,759,6,8,34,3,0,0,1,0,0,0
+10,19,developer revenue,748,778,58,11,40,3,0,0,-1,0,0,0
+10,20,initial developer finance,913,718,92,18,8,131,1,0,0,0,0,0
+12,21,48,1198,760,10,8,0,3,0,0,-1,0,0,0
+1,22,24,21,4,0,0,22,0,0,0,-1--1--1,,1|(1140,760)|
+1,23,24,14,100,0,0,22,0,0,0,-1--1--1,,1|(1036,760)|
+11,24,48,1086,760,6,8,34,3,0,0,1,0,0,0
+10,25,developer expenditure,1086,788,81,20,40,131,0,0,-1,0,0,0
+1,26,20,14,0,0,0,0,0,64,1,-1--1--1,,1|(914,726)|
+10,27,Insite Low Income Population,544,341,57,29,3,131,0,0,0,0,0,0
+10,28,Insite Normal Residence,1242,518,68,32,3,131,0,0,0,0,0,0
+12,29,48,1544,520,10,8,0,3,1,0,-1,0,0,0
+1,30,32,28,4,0,0,22,0,0,0,-1--1--1,,1|(1391,515)|
+1,31,32,29,100,0,0,22,0,0,0,-1--1--1,,1|(1509,515)|
+11,32,48,1478,515,6,8,34,3,0,0,1,0,0,0
+10,33,newly built normal residence,1478,547,56,24,40,131,0,0,-1,0,0,0
+10,34,initial insite low income population,561,391,59,20,8,131,1,0,-1,0,0,0
+10,35,initial normal residence,1231,567,74,12,8,131,1,0,0,0,0,0
+10,36,Insite High Income Population,564,574,57,31,3,131,0,0,0,0,0,0
+10,37,initial instie high income population,564,633,58,19,8,131,1,0,0,0,0,0
+10,38,BUILDING UNIT COST,1199,643,51,19,8,131,0,0,0,0,0,0
+10,39,Outside Low Income Population,257,335,58,27,3,131,1,0,0,0,0,0
+1,40,42,27,4,1,0,22,0,0,0,-1--1--1,,1|(438,345)|
+1,41,42,39,100,1,0,22,0,0,0,-1--1--1,,1|(346,345)|
+11,42,764,384,345,6,8,34,3,1,0,1,0,0,0
+10,43,move in low income population,384,372,64,19,40,3,1,0,-1,0,0,0
+10,44,Outsite High Income Population,253,576,57,31,3,131,1,0,0,0,0,0
+10,45,initial outside low income population,250,388,58,19,8,3,1,0,0,0,0,0
+10,46,initial outside high income population,253,638,58,19,8,3,1,0,0,0,0,0
+1,47,49,36,4,1,0,22,0,0,0,-1--1--1,,1|(452,576)|
+1,48,49,44,100,1,0,22,0,0,0,-1--1--1,,1|(347,576)|
+11,49,860,391,576,6,8,34,3,1,0,1,0,0,0
+10,50,move in high income population,391,605,68,21,40,131,1,0,-1,0,0,0
+10,51,move in prob for low income people,499,250,67,19,8,3,1,0,0,0,0,0
+10,52,move in prob for high income people,327,460,68,19,8,3,1,0,0,0,0,0
+1,53,51,43,1,1,0,0,0,128,0,-1--1--1,,1|(421,285)|
+1,54,39,43,1,1,0,0,0,128,0,-1--1--1,,1|(314,286)|
+10,55,income tax,693,282,35,11,8,3,0,0,0,0,0,0
+10,56,property tax,1016,276,39,11,8,3,0,0,0,0,0,0
+1,57,27,55,1,0,0,0,0,128,0,-1--1--1,,1|(666,282)|
+1,58,55,6,0,0,0,0,0,128,0,-1--1--1,,1|(692,199)|
+1,59,56,6,1,0,0,0,0,128,0,-1--1--1,,1|(825,230)|
+1,60,28,56,1,0,0,0,0,128,0,-1--1--1,,1|(1175,411)|
+1,61,44,49,1,1,0,0,0,128,0,-1--1--1,,1|(328,516)|
+1,62,52,49,1,1,0,0,0,128,0,-1--1--1,,1|(395,528)|
+1,63,36,55,1,0,0,0,0,128,0,-1--1--1,,1|(690,491)|
+10,64,INCOME TAX RATE,630,221,52,19,8,3,1,0,0,0,0,0
+1,65,64,55,0,1,0,0,0,128,0,-1--1--1,,1|(659,250)|
+10,66,PROPERTY TAX RATE,967,333,50,16,8,131,1,0,0,0,0,0
+1,67,66,56,0,1,0,0,0,128,0,-1--1--1,,1|(988,307)|
+10,68,rent,739,625,14,11,8,3,0,0,0,0,0,0
+1,69,68,19,0,0,0,0,0,128,0,-1--1--1,,1|(742,694)|
+1,70,27,68,1,0,0,0,0,128,0,-1--1--1,,1|(717,499)|
+1,71,36,68,1,0,0,0,0,128,0,-1--1--1,,1|(668,580)|
+10,72,subsidies for low income people,1012,192,54,19,8,3,0,0,0,0,0,0
+10,73,FIXED EXPENDITURE,1177,161,42,19,8,3,1,0,0,0,0,0
+1,74,72,11,1,0,0,0,0,128,0,-1--1--1,,1|(1037,151)|
+1,75,73,11,0,1,0,0,0,128,0,-1--1--1,,1|(1124,130)|
+10,76,SUBSIDY PER LOW INCOME PERSON,853,146,73,19,8,3,0,0,0,0,0,0
+1,77,76,72,1,0,0,0,0,128,0,-1--1--1,,1|(937,155)|
+1,78,76,51,1,1,0,0,0,128,0,-1--1--1,,1|(555,213)|
+1,79,45,39,0,0,0,0,0,128,1,-1--1--1,,1|(251,372)|
+1,80,46,44,0,0,0,0,0,128,1,-1--1--1,,1|(253,620)|
+1,81,37,36,0,0,0,0,0,128,1,-1--1--1,,1|(564,616)|
+1,82,34,27,0,0,0,0,0,128,1,-1--1--1,,1|(560,373)|
+10,83,vacant normal residence,900,556,45,19,8,3,1,0,0,0,0,0
+10,84,Insite Affordable Residence,1239,344,68,33,3,131,0,0,0,0,0,0
+12,85,48,1535,333,10,8,0,3,1,0,-1,0,0,0
+1,86,88,84,4,0,0,22,0,0,0,-1--1--1,,1|(1346,332)|
+1,87,88,85,100,0,0,22,0,0,0,-1--1--1,,1|(1461,332)|
+11,88,48,1391,332,6,8,34,3,0,0,1,0,0,0
+10,89,newly built affordable residence,1391,359,65,19,40,3,0,0,-1,0,0,0
+10,90,vacant affordable residence,895,423,58,16,8,131,1,0,0,0,0,0
+10,91,initial affordable residence,1257,397,72,24,8,131,1,0,0,0,0,0
+1,92,35,28,0,0,0,0,0,128,1,-1--1--1,,1|(1232,559)|
+1,93,91,84,0,0,0,0,0,128,1,-1--1--1,,1|(1251,381)|
+1,94,84,56,1,0,0,0,0,128,0,-1--1--1,,1|(1038,269)|
+1,95,28,83,1,1,0,0,0,128,0,-1--1--1,,1|(1158,546)|
+1,96,84,90,0,1,0,0,0,128,0,-1--1--1,,1|(1068,382)|
+1,97,38,25,1,0,0,0,0,128,0,-1--1--1,,1|(1145,689)|
+1,98,33,24,1,0,0,0,0,128,0,-1--1--1,,1|(1325,690)|
+1,99,27,90,1,1,0,0,0,128,0,-1--1--1,,1|(712,379)|
+1,100,36,83,0,1,0,0,0,128,0,-1--1--1,,1|(731,564)|
+10,101,total insite population,491,471,50,21,8,131,1,0,0,0,0,0
+1,102,27,101,1,1,0,0,0,128,0,-1--1--1,,1|(491,388)|
+1,103,36,101,1,1,0,0,0,128,0,-1--1--1,,1|(500,521)|
+10,104,move in prob lookup for low income people,409,176,74,28,8,3,1,0,0,0,0,0
+1,105,104,51,0,1,0,0,0,128,0,-1--1--1,,1|(453,212)|
+1,106,83,50,1,1,0,0,0,128,0,-1--1--1,,1|(566,686)|
+1,107,90,43,1,1,0,0,0,128,0,-1--1--1,,1|(620,465)|
+1,108,101,52,0,1,0,0,0,128,0,-1--1--1,,1|(424,466)|
+10,109,move in prob lookup for high income people,148,464,75,28,8,3,1,0,0,0,0,0
+1,110,109,52,0,1,0,0,0,128,0,-1--1--1,,1|(234,462)|
+10,111,TAX RETURN RATIO FOR AFFORDABLE RESIDENCE,1257,229,78,28,8,3,0,0,0,0,0,0
+1,112,111,56,1,0,0,0,0,128,0,-1--1--1,,1|(1126,231)|
+1,113,56,24,1,0,0,0,0,128,0,-1--1--1,,1|(1136,523)|
+1,114,89,24,1,0,0,0,0,128,0,-1--1--1,,1|(1305,595)|
+10,115,affordable investment ratio,1480,267,50,19,8,3,1,0,0,0,0,0
+1,116,111,115,0,1,0,0,0,128,0,-1--1--1,,1|(1375,248)|
+1,117,115,89,0,1,0,0,0,128,0,-1--1--1,,1|(1440,308)|
+1,118,115,33,1,1,0,0,0,128,0,-1--1--1,,1|(1508,407)|
+10,119,new residence to be built,1460,670,54,19,8,3,1,0,0,0,0,0
+1,120,119,33,0,1,0,0,0,128,0,-1--1--1,,1|(1466,617)|
+1,121,119,89,1,1,0,0,0,128,0,-1--1--1,,1|(1397,532)|
+1,122,14,119,1,1,0,0,0,128,0,-1--1--1,,1|(1262,817)|
+10,123,affordable investment ratio lookup,1487,193,68,19,8,3,1,0,0,0,0,0
+1,124,123,115,0,1,0,0,0,128,0,-1--1--1,,1|(1484,223)|
+10,125,diversity,230,106,27,11,8,3,17,0,0,0,0,0
+10,126,occupancy rate for affordable residence,1053,445,65,19,8,3,1,0,0,0,0,0
+10,127,Insite High Income Population,98,59,65,19,8,2,1,3,-1,0,0,0,128-128-128,0-0-0,|12||128-128-128
+10,128,Insite Low Income Population,101,106,65,19,8,2,1,3,-1,0,0,0,128-128-128,0-0-0,|12||128-128-128
+1,129,127,125,0,17,0,0,0,128,0,-1--1--1,,1|(170,84)|
+1,130,128,125,0,17,0,0,0,128,0,-1--1--1,,1|(177,106)|
+10,131,total insite population,103,154,39,19,8,2,1,3,-1,0,0,0,128-128-128,0-0-0,|12||128-128-128
+1,132,131,125,0,17,0,0,0,128,0,-1--1--1,,1|(165,130)|
+1,133,90,126,1,1,0,0,0,128,0,-1--1--1,,1|(1037,435)|
+1,134,84,126,1,1,0,0,0,128,0,-1--1--1,,1|(1118,386)|
+10,135,total occupancy rate,1046,517,45,21,8,131,1,0,0,0,0,0
+1,136,90,135,1,1,0,0,0,128,0,-1--1--1,,1|(963,491)|
+1,137,83,135,1,1,0,0,0,128,0,-1--1--1,,1|(957,524)|
+1,138,84,135,1,1,0,0,0,128,0,-1--1--1,,1|(1148,442)|
+1,139,28,135,1,1,0,0,0,128,0,-1--1--1,,1|(1119,499)|
+1,140,27,72,1,0,0,0,0,128,0,-1--1--1,,1|(794,323)|
+10,141,RENT PER M2,664,710,51,11,8,3,1,0,0,0,0,0
+1,142,141,68,1,1,0,0,0,128,0,-1--1--1,,1|(711,671)|
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
+*View 2
+$0-0-0,0,|0||0-0-0|0-0-0|0-0-0|0-0-0|0-0-0|96,96,80,0
+///---\\\
+:L<%^E!@
+1:Non-Incentive Policy.vdf
+1:Very Aggressive Policy.vdf
+1:Current.vdf
+9:Current
+15:0,0,0,0,0,0
+19:80,0
+27:2,
+34:0,
+4:Time
+5:move in high income population
+35:Date
+36:YYYY-MM-DD
+37:2021
+38:1
+39:1
+40:1
+41:0
+42:1
+24:0
+25:16
+26:16
