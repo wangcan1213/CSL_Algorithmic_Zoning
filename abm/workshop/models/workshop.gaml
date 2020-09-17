@@ -34,35 +34,35 @@ global {
 	blockgroup kendall_virtual_block;
 	float far_discount <- 0.7;    //it seems that current landuse plan provides too many residences
 	list<map> move_stat <- [];
+	bool consider_nonkendall_resident_capacity <- false;
 	
 	int lower_nb_represented_persons <- 3;     //mainly used for kendall landuse, and as the unit for a real move
 	int upper_nb_represented_persons <- 120;   //mainly used for outside blockgroup
-	int nb_nonkendall_blocks_in_hom_loc_choice <- 5;
+	int nb_nonkendall_blocks_in_hom_loc_choice <- 10;
 	float ratio_of_people_considering_move_at_each_step <- 0.05;
 	float mean_monthly_rent_low_income <- 1112.0; //25% percentile for all rents, used as rent of current residence for low inc person if block mean rent unavailabe
 	float mean_monthly_rent_high_income <- 1429.0; //75% percentile for all rents, used as rent of current residence for high inc person if block mean rent unavailabe
-	float beta_work_allocation <- -0.3;
+	float beta_work_allocation <- -0.5;
 	
 	// preference parameters
 	float b_move_low_inc <- -1.43;
-	float b_commute_distance_low_inc <- -0.88; //-0.28
+	float b_commute_distance_low_inc <- -0.88; //-1.28
 	float b_large_size_low_inc <- 0.0; //0.24
 	float b_price_low_inc <- -0.003;    //-0.004
 	float b_pop_density_low_inc <- -0.00; //-0.0056
 	float b_inc_disparity_low_inc <- -0.00;  //-0.21
 	
 	float b_move_high_inc <- -1.29;
-	float b_commute_distance_high_inc <- -0.81;  //-0.31
+	float b_commute_distance_high_inc <- -0.81;  //-1.31
 	float b_large_size_high_inc <- 0.0;  //0.52
 	float b_price_high_inc <- -0.0006;    //-0.0012
 	float b_pop_density_high_inc <- -0.0; //-0.0123
 	float b_inc_disparity_high_inc <- -0.0;  //-0.52
 	
 	//policy parameters
+	float construction_cost_per_m2 <- 1000.0;
 	int subsidy_low_inc <- 50;
 	int sbusidy_less_commute <- 500;
-	float tax_return_ratio_for_affordable_residence <- 0.2;
-	int mean_budget_for_new_construction <- 50000;
 	float commute_distance_goal <- 2.0;
 	
 	
@@ -80,7 +80,7 @@ global {
 	map<string, float> mean_commute_distance;
 	
 	// viz control
-	bool focus_on_kendall <- true;
+	bool focus_on_kendall <- false;
 	bool is_focused <- false;
 	bool show_legend <- true;
 	bool show_workplace <- false;
@@ -247,16 +247,14 @@ global {
 		if cycle > 4 {
 			write "Landuse rent discount: 0.01";
 			ask landuse {
-				rent_discount_ratio <- 0.01;
+				rent_discount_ratio <- 0.8;
 			}
 		}
 		
 		ask people {
 			settled_time <- settled_time + 1;   
-			if (work_in_kendall=false and flip(ratio_of_people_considering_move_at_each_step)) and settled_time>=5 {
-				do select_residence;
-			}
-			if (work_in_kendall) and settled_time>=5 {
+//			if (work_in_kendall=true or flip(ratio_of_people_considering_move_at_each_step)) and settled_time>=5 {
+			if (flip(ratio_of_people_considering_move_at_each_step)) and settled_time>=5 {
 				do select_residence;
 			}
 		}
@@ -293,7 +291,7 @@ global {
 		}
 	}
 	
-	reflex haulting when: cycle>12 {
+	reflex halting when: cycle>12 {
 		do pause;
 	}
 	
@@ -383,6 +381,10 @@ global {
 				// randomly determin workplace using a very simple logit model with commute distance as the single regressor
 				list<float> dist_to_nonkendall_blockgruops_from_my_home <- nonkendall_blockgroups collect (blockgroup_distance_matrix_map[home_block.geoid][each.geoid] / 1000);
 				list<float> exp_v <- dist_to_nonkendall_blockgruops_from_my_home collect exp(each* beta_work_allocation);
+////				// debug
+//				if this_in_kendall {
+//					exp_v <- dist_to_nonkendall_blockgruops_from_my_home collect exp(each* (-beta_work_allocation));
+//				}
 				int choice_idx <- rnd_choice(exp_v);
 				work_block <- nonkendall_blockgroups[choice_idx];
 //				work_block <- any(nonkendall_blockgroups);
@@ -695,7 +697,7 @@ species blockgroup {
 	}
 }
 
-species people {
+species people schedules: shuffle(people){
 	int represented_nb_people;
 	int settled_time;
 	float show_size;
@@ -744,18 +746,39 @@ species people {
 		list<string> alternative_geoid_list <- [home_block.geoid]; //current blockgroup will always be in the choice set
 		bool kendall_in_choice_set <- false;
 		if kendall_virtual_block.crt_nb_available_bedrooms > 0 {  // kendall will be in the choice set as long as there are vacant houses 
-			kendall_in_choice_set <- true;
-			alternative_geoid_list << 'kendall';
+			if (distance_to_blockgroups_from_my_work_map['250173523001'] < 3000) or (
+				distance_to_blockgroups_from_my_work_map['250173523001'] >= 3000 and 
+				flip(nb_nonkendall_blocks_in_hom_loc_choice/length(nonkendall_geoid_list+1))
+			) {
+				kendall_in_choice_set <- true;
+				alternative_geoid_list << 'kendall';
+			}
 		}
 		// add non-kendall blockgroups as alternatives:
 		// 1. randomly select up-to-5 blockgroups from non-kendall blockgroups within 3km from work and with at least 1 vacatn bedroom.
 		// 2. then, randomly select up-to-5 blockgroups from all other non-kendall blockgroups with at least 1 vacant bedroom
-		list<string> candidate_nearby_nonkendall_blockgroups_with_vacant_residences <- nonkendall_geoids_in_3km_from_work where (
-			blockgroup_lookup_map[each].crt_nb_available_bedrooms > 0);
+		list<string> candidate_nearby_nonkendall_blockgroups_with_vacant_residences;
+		list<string> candidate_other_nonkendall_blockgroups_with_vacant_residences;
+		if consider_nonkendall_resident_capacity {
+			 candidate_nearby_nonkendall_blockgroups_with_vacant_residences <- nonkendall_geoids_in_3km_from_work where (
+				blockgroup_lookup_map[each].crt_nb_available_bedrooms > 0);
+		} else {
+			candidate_nearby_nonkendall_blockgroups_with_vacant_residences <- nonkendall_geoids_in_3km_from_work where (
+				blockgroup_lookup_map[each].init_low_inc_pop + blockgroup_lookup_map[each].init_high_inc_pop>0
+			);
+		}
 		alternative_geoid_list <-  alternative_geoid_list + 
 			(nb_nonkendall_blocks_in_hom_loc_choice among candidate_nearby_nonkendall_blockgroups_with_vacant_residences); 
-		list<string> candidate_other_nonkendall_blockgroups_with_vacant_residences <- (nonkendall_geoid_list - alternative_geoid_list) where (
-			blockgroup_lookup_map[each].crt_nb_available_bedrooms > 0);
+		
+		if consider_nonkendall_resident_capacity {
+			candidate_other_nonkendall_blockgroups_with_vacant_residences<- (nonkendall_geoid_list - alternative_geoid_list) where (
+				blockgroup_lookup_map[each].crt_nb_available_bedrooms > 0);
+		} else {
+			candidate_other_nonkendall_blockgroups_with_vacant_residences <- (nonkendall_geoid_list - alternative_geoid_list) where (
+				blockgroup_lookup_map[each].init_low_inc_pop + blockgroup_lookup_map[each].init_high_inc_pop>0
+			);
+		}
+		 
 		alternative_geoid_list <- alternative_geoid_list + 
 			(nb_nonkendall_blocks_in_hom_loc_choice among candidate_other_nonkendall_blockgroups_with_vacant_residences);
 		
@@ -1152,7 +1175,6 @@ experiment gui type: gui {
 	
 	parameter "Monthly Subsidy for Low Income People" var:subsidy_low_inc category:"Incentive Policy";
 	parameter "Lump-Sum Subsidy for Commute Deccreasing Move" var:sbusidy_less_commute category:"Incentive Policy";
-	parameter "Tax Return Ratio for Affordable Residences" var:tax_return_ratio_for_affordable_residence category:"Incentive Policy";
 	
 	parameter "Move (vs. Stay)" var:b_move_low_inc category: "Preference Parameters: Low Income People";
 	parameter "Commute Distance (km)" var:b_commute_distance_low_inc category: "Preference Parameters: Low Income People";
@@ -1168,7 +1190,6 @@ experiment gui type: gui {
 	parameter "Population Density (persons/ha) " var:b_pop_density_high_inc category: "Preference Parameters: High Income People";
 	parameter "Income Disparity " var:b_inc_disparity_high_inc category: "Preference Parameters: High Income People";
 	
-	parameter "Mean Budget for New Construction" var:mean_budget_for_new_construction category:"Developer Parameters";
 	
 	output {
 		display base type:java2D{
