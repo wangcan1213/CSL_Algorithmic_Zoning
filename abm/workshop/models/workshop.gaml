@@ -35,8 +35,6 @@ global {
 	float far_discount <- 0.7;    //it seems that current landuse plan provides too many residences
 	list<map> move_stat <- [];
 	bool consider_nonkendall_resident_capacity <- false;
-	int max_cycle <- 12;
-	developer the_developer;
 	
 	int lower_nb_represented_persons <- 3;     //mainly used for kendall landuse, and as the unit for a real move
 	int upper_nb_represented_persons <- 120;   //mainly used for outside blockgroup
@@ -45,10 +43,6 @@ global {
 	float mean_monthly_rent_low_income <- 1112.0; //25% percentile for all rents, used as rent of current residence for low inc person if block mean rent unavailabe
 	float mean_monthly_rent_high_income <- 1429.0; //75% percentile for all rents, used as rent of current residence for high inc person if block mean rent unavailabe
 	float beta_work_allocation <- -0.5;
-	float residence_area_small_scale <- 40.0;
-	float residence_area_large_scale <- 80.0;
-	float office_area_small_scale <- 20.0;
-	float office_area_large_scale <- 40.0;
 	
 	// preference parameters
 	float b_move_low_inc <- -1.43;
@@ -73,7 +67,7 @@ global {
 	
 	
 	// performance indices
-	map<string, float> kendall_occupancy <- ['overall'::0.0 ,'small'::0, 'large'::0];
+	float kendall_occupancy;
 	float kendall_diversity;
 	float kendall_low_inc_ratio;
 	float kendall_building_energy;
@@ -84,8 +78,6 @@ global {
 	list<int> move_max_value_record_list; //record the max value of move_to_kendall & move_out_of_kendall, so as to set crt_move_y_axis_upper_range
 	int crt_move_y_axis_upper_range;   //to set the max value of y-axis range
 	map<string, float> mean_commute_distance;
-	map<string, float> kendall_resident_utility;
-	map<string, float> kendall_resident_utility_at_start; //use to normalization in viz;
 	
 	// viz control
 	bool focus_on_kendall <- false;
@@ -178,8 +170,7 @@ global {
 		
 //		create building from:buildings_shp;
 		create government number:1;
-		create developer number:1 returns:tmp;
-		the_developer <- first(tmp);
+		create developer number:1;
 		
 		ask blockgroup where (population_discount contains_key each.geoid) {
 			init_low_inc_pop <- int(init_low_inc_pop * population_discount[geoid]);
@@ -253,12 +244,11 @@ global {
 		move_stat <- [];
 		
 		// apply Kenall policy 
-		if cycle = 4 {
-//			write "Landuse rent discount: 0.01";
-//			ask 2 among (landuse where (each.usage='vacant')) {
-//				do new_constructions(0.0, 2.0);
-//				do change_landuse('R', 'S', 1);
-//			}
+		if cycle > 4 {
+			write "Landuse rent discount: 0.01";
+			ask landuse {
+				rent_discount_ratio <- 0.8;
+			}
 		}
 		
 		ask people {
@@ -268,16 +258,16 @@ global {
 				do select_residence;
 			}
 		}
-//		write 'people over, vacant house=' + kendall_virtual_block.crt_nb_available_bedrooms;
+		write 'people over, vacant house=' + kendall_virtual_block.crt_nb_available_bedrooms;
 		ask landuse {
 			do update_current_population;
 		}
 		ask blockgroup {
 			do update_current_population;
 		}
-//		write 'update over, vacant house=' + kendall_virtual_block.crt_nb_available_bedrooms;
+		write 'update over, vacant house=' + kendall_virtual_block.crt_nb_available_bedrooms;
 		do kendall_statistics;
-		ask the_developer {do collect_rent;}
+		write 'statistic over, vacant house=' + kendall_virtual_block.crt_nb_available_bedrooms;
 		ask people where (each.represented_nb_people <= 0) {
 			if represented_nb_people > 0 {
 				show_size <- 5 + (20-5)*(represented_nb_people-1)/(50-1);
@@ -301,7 +291,7 @@ global {
 		}
 	}
 	
-	reflex halting when: cycle>max_cycle {
+	reflex halting when: cycle>12 {
 		do pause;
 	}
 	
@@ -352,11 +342,9 @@ global {
 			ask this_low_income_population_work_in_kendall + this_high_income_population_work_in_kendall {
 				work_in_kendall <- true;
 				settled_time <- 10000;
-				list<landuse> work_grid_candidates <- landuse where (each.worker_capacity - each.crt_nb_workers >= represented_nb_people);
+				list<landuse> work_grid_candidates <- landuse where (each.worker_capacity >= represented_nb_people);
 				if length(work_grid_candidates) > 0 {
 					work_grid <- any(work_grid_candidates);
-					work_grid.crt_nb_workers <- work_grid.crt_nb_workers + represented_nb_people;
-					work_grid.attached_workers << self;
 					work_loc <- any_location_in(work_grid);
 					work_block <- work_grid.associated_blockgroup;
 				} else {
@@ -393,6 +381,10 @@ global {
 				// randomly determin workplace using a very simple logit model with commute distance as the single regressor
 				list<float> dist_to_nonkendall_blockgruops_from_my_home <- nonkendall_blockgroups collect (blockgroup_distance_matrix_map[home_block.geoid][each.geoid] / 1000);
 				list<float> exp_v <- dist_to_nonkendall_blockgruops_from_my_home collect exp(each* beta_work_allocation);
+////				// debug
+//				if this_in_kendall {
+//					exp_v <- dist_to_nonkendall_blockgruops_from_my_home collect exp(each* (-beta_work_allocation));
+//				}
 				int choice_idx <- rnd_choice(exp_v);
 				work_block <- nonkendall_blockgroups[choice_idx];
 //				work_block <- any(nonkendall_blockgroups);
@@ -445,19 +437,12 @@ global {
 		}
 	}
 	
+	action new_construction {
+		
+	}
 	
 	action kendall_statistics {
-		// occupany
-		kendall_occupancy['overall'] <- kendall_virtual_block.crt_total_pop / sum(landuse collect each.resident_capacity);
-		list<landuse> affordable_residence_grids <- landuse where (each.usage='R' and each.is_affordable);
-		list<people> people_in_affordable_residences <- affordable_residence_grids accumulate each.attached_residents;
-		list<landuse> normal_residence_grids <- landuse where (each.usage='R' and each.is_affordable=false);
-		list<people> people_in_normal_residences <- normal_residence_grids accumulate each.attached_residents;
-		kendall_occupancy['affordable'] <- sum(people_in_affordable_residences collect each.represented_nb_people) / 
-			sum(affordable_residence_grids collect each.resident_capacity);
-		kendall_occupancy['normal'] <- sum(people_in_normal_residences collect each.represented_nb_people) / 
-			sum(normal_residence_grids collect each.resident_capacity);
-		
+		kendall_occupancy <- kendall_virtual_block.crt_total_pop / sum(landuse collect each.resident_capacity);
 		kendall_diversity <- kendall_virtual_block.crt_diversity;
 		kendall_low_inc_ratio <- kendall_virtual_block.crt_low_inc_pop / kendall_virtual_block.crt_total_pop;
 		kendall_building_energy <- 0.0;
@@ -482,21 +467,6 @@ global {
 		if cycle=4 {remove max(move_max_value_record_list) from:move_max_value_record_list;}
 		crt_move_y_axis_upper_range <- max(move_max_value_record_list) + 15;
 //		write string(crt_move_y_axis_upper_range) + ', ' +  string(int(quantile(move_max_value_record_list, 1))+10) + ', ' + string(max(move_max_value_record_list));
-		
-		// utility calculation
-		ask people where (each.live_in_kendall) {
-			do calculate_utility;
-		}
-		kendall_resident_utility['total'] <- sum( (people where (each.live_in_kendall)) collect (each.represented_nb_people * each.utility) ) / 
-			sum((people where (each.live_in_kendall)) collect each.represented_nb_people);
-		kendall_resident_utility['low_inc'] <- sum( (people where (each.live_in_kendall and each.income=0)) collect (each.represented_nb_people * each.utility) ) / 
-			sum((people where (each.live_in_kendall and each.income=0)) collect each.represented_nb_people);
-		kendall_resident_utility['high_inc'] <- sum( (people where (each.live_in_kendall and each.income=1)) collect (each.represented_nb_people * each.utility) ) / 
-			sum((people where (each.live_in_kendall and each.income=1)) collect each.represented_nb_people);	
-		if cycle = 0 {
-			kendall_resident_utility_at_start <- ['total'::kendall_resident_utility['total'], 'low_inc'::kendall_resident_utility['low_inc'], 'high_inc'::kendall_resident_utility['high_inc']];
-		}
-		write kendall_resident_utility;
 	}
 	
 	
@@ -599,22 +569,10 @@ species government {
 }
 
 species developer {
-	float finance <- 0.0;
-	float revene_total <- 0.0;
-	float expenditure_total <- 0.0;
-	map<int, map<string, float>> revene_detail <- map([]);
-	map<int, map<string, float>> expenditure_detail <- map([]);
+	float finance;
+	float revene;
+	float expenditure;
 	init {
-		loop c from:0 to:max_cycle+1 {
-			revene_detail << c::map(['rent'::0]);
-			expenditure_detail << c::map(['construction'::0]);
-		}
-	}
-	action collect_rent {
-		float rent_in_this_cycle <- sum((landuse where (each.usage='R')) collect (each.crt_total_pop * each.rent));
-		revene_detail[cycle]['rent'] <- rent_in_this_cycle;
-		revene_total <- revene_total + rent_in_this_cycle;
-		finance <- finance + rent_in_this_cycle;
 	}
 }
 
@@ -764,7 +722,6 @@ species people schedules: shuffle(people){
 	float b_pop_density;
 	float b_inc_disparity;
 	matrix<float> b_mat;
-	float utility <- 999.0;  //only apply to those who live in kendall, here 999 will be viewed as nan;
 	init {
 		if income=0 {
 			b_move <- b_move_low_inc;
@@ -784,7 +741,7 @@ species people schedules: shuffle(people){
 		b_mat <- reverse(matrix([b_move, b_commute_distance, b_large_size, b_price, b_pop_density, b_inc_disparity]));
 	}
 	
-	action select_residence (bool must_move <- false){
+	action select_residence {
 		float t1 <- machine_time;
 		list<string> alternative_geoid_list <- [home_block.geoid]; //current blockgroup will always be in the choice set
 		bool kendall_in_choice_set <- false;
@@ -843,22 +800,28 @@ species people schedules: shuffle(people){
 		list<float> p;
 		if represented_nb_people > lower_nb_represented_persons {// if represented_nb_people is big enough, use the real aggreated prob 
 			 p <- v_to_p(v);
-			 if must_move { //set p[0](stay)=0 and then rescale p vector
-			 	p[0] <- 0;
-			 	float sum_p <- sum(p);
-			 	if sum_p != 0 {p <- p collect (each/sum_p);} else {p <- p collect (1/length(p));}
-			 }
 		} else { //if too few people make choice, aggreated prob may cause round error, like round([0.3,0.3,0.4] * 1 person) = [0,0,0]
 //			int chosen_idx <- to_choose(v); // to avoid this round error, use simulated prob by Monte Carlo method
 			int chosen_idx <- (v index_of max(v)); //to avoid this round error, always choose the alt with max_v
-			if must_move and chosen_idx = 0 {
-				v[0] <- min(v)-1;
-				chosen_idx <- (v index_of max(v));
-			}
 			p <- v collect 0.0;
 			p[chosen_idx] <- 1.0;
 		}
-			
+		
+//////		// debug
+//		if work_in_kendall and represented_nb_people > 0 and (live_in_kendall=false) {
+//			write '\n------------------';
+//			write "Kendall vacant number of residences: " + kendall_virtual_block.crt_nb_available_bedrooms ;
+////			write "I am working in Kendall: " + work_in_kendall;
+//			write 'Kendall in choice set: ' + kendall_in_choice_set;
+//			write "dist: "  + commute_dist_to_these_blocks;
+//			write "rent: " + rent_in_these_blocks;
+// 			if commute_dist_to_these_blocks[1] != min(commute_dist_to_these_blocks) {
+//				write "work grid: " + (work_grid=nil? work_block.geoid : work_grid.id) + ", crt live block: " + home_block.geoid;
+//			}
+//			write 'My name: ' + self + ', represent number of people: ' + represented_nb_people;
+//			if kendall_in_choice_set {write "Kendall prob: " + p[1]; write "Expected move in people: " + string(represented_nb_people*p[1]) + ', round to: ' + round(represented_nb_people*p[1]);}
+//		}
+//		
 		loop idx from:0 to:length(p)-1 {
 			int nb_people_to_make_this_choice <- round(represented_nb_people * p[idx]);
 			if idx = 0 {
@@ -991,47 +954,6 @@ species people schedules: shuffle(people){
 			}
 		}
 		 */
-	}
-	
-	action select_workplace (float prob_in_kendall) {
-		if flip(prob_in_kendall) {
-			list<landuse> work_grid_candidates <- landuse where (each.worker_capacity-each.crt_nb_workers >= represented_nb_people);
-			if length(work_grid_candidates) > 0 {
-				work_grid <- any(work_grid_candidates);
-				work_grid.crt_nb_workers <- work_grid.crt_nb_workers + represented_nb_people;
-				work_grid.attached_workers << self;
-				work_loc <- any_location_in(work_grid);
-				work_block <- work_grid.associated_blockgroup;
-			} else {
-				write "Set workplace for Kendall workers: cannot find a inside workplace";
-				work_block <- any(blockgroup);
-				work_loc <- any_location_in(work_block);
-			}
-		} else {
-			list<float> dist_to_nonkendall_blockgruops_from_my_home <- nonkendall_blockgroups collect (blockgroup_distance_matrix_map[home_block.geoid][each.geoid] / 1000);
-			list<float> exp_v <- dist_to_nonkendall_blockgruops_from_my_home collect exp(each* beta_work_allocation);
-			int choice_idx <- rnd_choice(exp_v);
-			work_block <- nonkendall_blockgroups[choice_idx];
-			work_loc <- any_location_in(work_block);
-		}
-		distance_to_blockgroups_from_my_work_map <- blockgroup_distance_matrix_map[work_block.geoid];
-		nonkendall_geoids_in_3km_from_work <- nonkendall_geoid_list where (distance_to_blockgroups_from_my_work_map[each] <= 3000.0);
-		if work_grid != nil {
-			distance_to_grids_from_my_work_map <- grid_distance_matrix_map[work_grid.id];
-		} else {
-			distance_to_grids_from_my_work_map <- blockgroup_to_grid_distance_matrix_map[work_block.geoid];	
-		}
-		if work_grid != nil and home_grid != nil {commute_distance <- grid_distance_matrix_map[home_grid.id][work_grid.id];}
-		else if work_grid = nil and home_grid = nil {commute_distance <- blockgroup_distance_matrix_map[home_block.geoid][work_block.geoid];}
-		else if work_grid != nil {commute_distance <- blockgroup_to_grid_distance_matrix_map[home_block.geoid][work_grid.id];}
-		else if home_grid != nil {commute_distance <- blockgroup_to_grid_distance_matrix_map[work_block.geoid][home_grid.id];}	
-	}
-	
-	action calculate_utility {
-		if live_in_kendall {
-			utility <- commute_distance*b_commute_distance/1000 + b_large_size*(float(home_grid.scale!='S')) + 
-				b_price*home_grid.rent + b_pop_density*home_grid.crt_pop_density + b_inc_disparity*abs(home_grid.crt_mean_income-income);
-		}
 	}
 	
 	list<float> v_to_ev (list<float> v) {
@@ -1173,7 +1095,7 @@ species landuse {
 	float crt_mean_income;
 	list<people> attached_residents <- [];
 	int worker_capacity <- 0;
-	int crt_nb_workers <- 0;
+	int nb_workers <- 0;
 	list<people> attached_workers;
 	bool is_affordable;
 	blockgroup associated_blockgroup;
@@ -1182,11 +1104,11 @@ species landuse {
 	init {
 		if usage = 'R' {
 			is_affordable <- scale='S';
-			resident_capacity <- int(myarea * far / (is_affordable ? residence_area_small_scale : residence_area_large_scale));
+			resident_capacity <- int(myarea * far / (is_affordable ? 40 : 80));
 			mycolor <- is_affordable ? #red : #orange;
 		}
 		if usage = 'O' {
-			worker_capacity <- int(myarea * far / (scale='S' ? office_area_small_scale : office_area_large_scale));
+			worker_capacity <- int(myarea * far / (scale='S' ? 20 : 40));
 			mycolor <- #blue;
 		}
 		if usage = 'vacant' {
@@ -1218,92 +1140,12 @@ species landuse {
 		}
 	}
 	
-	float new_constructions (float far_multiplier, float far_shift, bool add_to_developer_finance <- true) {
-		float far_before <- far;
-		float rent_multiplier <- 7.0;
-		far <- max(0, far*far_multiplier+far_shift);
-		float add_floor_area <- 0.0;
-		float construction_cost <- 0.0;
-		if far > far_before {
-			add_floor_area <- (far - far_before) * myarea;
-		}
-		if add_floor_area > 0 and add_floor_area < 500 {
-			construction_cost <- 270 * add_floor_area * rent_multiplier;
-		} else if add_floor_area >= 500 and add_floor_area < 2000 {
-			construction_cost <- 240 * add_floor_area * rent_multiplier;
-		} else if add_floor_area >= 2000 and add_floor_area < 4000 {
-			construction_cost <- 200 * add_floor_area * rent_multiplier;
-		} else if add_floor_area >= 4000 {
-			construction_cost <- 160 * add_floor_area * rent_multiplier;
-		}
-		if add_to_developer_finance {
-			ask developer {
-				expenditure_total <- expenditure_total + construction_cost;
-				finance <- finance - construction_cost;
-				expenditure_detail[cycle]['construction'] <- expenditure_detail[cycle]['construction'] + construction_cost;
-			}
-		}
-		return construction_cost;
+	action change_land_use{
+		
 	}
 	
-	action change_landuse (string new_usage, string new_scale <- 'same', float new_rent_discount <- 1.0, float new_rent_shift <- 0.0){
-		string usage_before <- usage;
-		string scale_before <- scale;
-		rent_discount_ratio <- new_rent_discount;
-		rent_shift <- new_rent_shift;
-		rent <- max(rent_base*rent_discount_ratio + rent_shift, 0.0);
-		if new_usage != 'same' {usage <- new_usage;}
-		if new_scale != 'same' {scale <- new_scale;}
-		worker_capacity <- 0;
-		resident_capacity <- 0;	
-		list<people> people_who_need_to_find_new_workplace <- [];
-		list<people> people_who_need_to_find_new_residence <- [];
-		if usage = 'R' {
-			is_affordable <- scale='S';
-			resident_capacity <- int(myarea * far / (is_affordable ? residence_area_small_scale : residence_area_large_scale));
-			mycolor <- is_affordable ? #red : #orange;
-			do update_current_population;
-			if usage_before = 'O' {
-				people_who_need_to_find_new_workplace <- people_who_need_to_find_new_workplace + attached_workers;
-			}
-			attached_workers <- [];
-			crt_nb_workers <- 0;
-			if usage_before = 'R' and crt_total_pop > resident_capacity {
-				int crt_total_pop_copy <- crt_total_pop;  //can not reduce crt_total_pop directly, as select_residence will do this again, so make a copy;
-				loop while: crt_total_pop_copy > resident_capacity {
-					people this_move_out_people <- one_of(attached_residents);
-					people_who_need_to_find_new_residence << this_move_out_people;
-					crt_total_pop_copy <- crt_total_pop_copy - this_move_out_people.represented_nb_people;
-					remove this_move_out_people from: attached_residents;
-				}
-			}
-		}
-		if usage = 'O' {
-			worker_capacity <- int(myarea * far / (scale='S' ? office_area_small_scale : office_area_large_scale));
-			mycolor <- #blue;
-			if usage_before = 'R' {
-				people_who_need_to_find_new_residence <- people_who_need_to_find_new_residence + attached_residents;
-			}
-			attached_residents <- [];
-			if usage_before = 'O' and crt_nb_workers > worker_capacity {
-				loop while: crt_nb_workers > worker_capacity {
-					people this_find_new_workplace_people <- one_of(attached_workers);
-					people_who_need_to_find_new_workplace << this_find_new_workplace_people;
-					crt_nb_workers <- crt_nb_workers - this_find_new_workplace_people.represented_nb_people;
-					remove this_find_new_workplace_people from: attached_workers;
-				}
-			}
-		}
-		if usage = 'vacant' {
-			mycolor <- #grey;
-		}
-		ask people_who_need_to_find_new_workplace {
-			do select_workplace(0.25);
-		}
-		ask people_who_need_to_find_new_residence {
-			do select_residence(true);
-		}
-	
+	action change_far {
+		
 	}
 	
 	aspect base {
@@ -1390,50 +1232,29 @@ experiment gui type: gui {
             }
 		}
 		display kendall_performance type:java2D{
-			chart "Total Population in Kendall" type: series background: #white position: {0.0,0.0} size: {0.33, 0.33} {
-				data "All" value: kendall_virtual_block.crt_total_pop color:#green;
-				data "Low Income" value:kendall_virtual_block.crt_low_inc_pop color:#red;
-				data "High Income" value:kendall_virtual_block.crt_high_inc_pop color:#blue;
+			chart "Moving Population" type: series background: #white position: {0,0.0} size: {0.5,0.5} y_range:{0,crt_move_y_axis_upper_range}{
+				data "Move to Kendall: Low Income" value: move_to_kendall_pop[0] color: #green;
+				data "Move to Kendall: High Income" value: move_to_kendall_pop[1] color: #blue;
+				data "Move out of Kendall: Low Income" value:move_out_of_kendall_pop[0] color: #red;
+				data "Move out of Kendall: High Income" value:move_out_of_kendall_pop[1] color: #orange;
 			}
-//			chart "Moving Population Related with Kendall" type: series background: #white position: {0.33,0.0} size: {0.67,0.33} y_range:{0,crt_move_y_axis_upper_range}{
-			chart "Moving Population Related with Kendall" type: series background: #white position: {0.33,0.0} size: {0.67,0.33} y_range:{0,200}{
-				data "To Kendall: Low Income" value: move_to_kendall_pop[0] color: #green;
-				data "To Kendall: High Income" value: move_to_kendall_pop[1] color: #blue;
-				data "Out of Kendall: Low Income" value:move_out_of_kendall_pop[0] color: #red;
-				data "Out of Kendall: High Income" value:move_out_of_kendall_pop[1] color: #orange;
+			chart "Occupancy" type:series background: #white position:{0,0.5} size:{0.5,0.5}{
+				data "Occupancy" value: kendall_occupancy color: #red;
 			}
-			chart "Occupancy" type:series background: #white position:{0.0,0.33} size:{0.33,0.34}{
-				data "Overall" value: kendall_occupancy['overall'] color: #green;
-				data "Small Scale" value: kendall_occupancy['affordable'] color:#red;
-				data "Large Scale" value: kendall_occupancy['normal'] color:#blue;
-			}
-			chart "Commute Distance" type:series background: #white position:{0.33,0.33} size:{0.34,0.34} {
+			chart "Commute Distance" type:series background: #white position:{0.5,0} size:{0.5,0.5} {
 				data "All" value: mean_commute_distance['all'] color:#red;
 				data "Work in Kendall" value: mean_commute_distance['work_in_kendall'] color:#green;
 				data "Live in Kendall" value: mean_commute_distance['live_in_kendall'] color:#blue;
-//				data "Work or Live in Kendall" value: mean_commute_distance['work_or_live_in_kendall'] color:#yellow;
+				data "Work or Live in Kendall" value: mean_commute_distance['work_or_live_in_kendall'] color:#yellow;
 			}
-			chart "Population Structure" type:series background: #white position:{0.67,0.33} size:{0.33,0.34}{
+			chart "Income Structure" type:series background: #white position:{0.5,0.5} size:{0.5,0.5}{
 				data "Diversity" value: kendall_diversity color: #red;
 				data "Low Income Proportion" value: kendall_low_inc_ratio color: #blue;
-			}
-			chart "Residence Energy" type:series background: #white position:{0.0,0.67} size:{0.33,0.33}{
-				data "Mean Eerngy" value: 1 color: #red;
-			}
-			chart "Resident Mean Utility" type:series background: #white position:{0.33,0.67} size:{0.34,0.33} {
-				data "Overall" value: kendall_resident_utility['total']-kendall_resident_utility_at_start['total'] color: #green;
-				data "Low Income" value: kendall_resident_utility['low_inc']-kendall_resident_utility_at_start['low_inc'] color: #red;
-				data "High Income" value: kendall_resident_utility['high_inc']-kendall_resident_utility_at_start['high_inc'] color: #blue;
-			}
-			chart "Developer Finance" type:series background: #white position:{0.67,0.67} size:{0.33,0.33}{
-				data "Finance" value: the_developer.finance color: #blue;
-				data "Expenditure" value: the_developer.expenditure_total color: #red;
-				data "Revene" value: the_developer.revene_total color: #green;
 			}
 		}
 //		monitor "Total population" value: sum(people collect (each.represented_nb_people));
 //		monitor "Total population moved" value: sum((people where (each.settled_time<1)) collect (each.represented_nb_people));
-//		inspect name:'Kendall' value:kendall_virtual_block type:agent;
+		inspect name:'Kendall' value:kendall_virtual_block type:agent;
 	}
 	
 }
