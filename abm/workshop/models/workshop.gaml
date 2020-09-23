@@ -49,6 +49,7 @@ global {
 	float residence_area_large_scale <- 80.0;
 	float office_area_small_scale <- 20.0;
 	float office_area_large_scale <- 40.0;
+	float residence_energy_per_m2 <- 1.0;
 	
 	// preference parameters
 	float b_move_low_inc <- -1.43;
@@ -86,6 +87,7 @@ global {
 	map<string, float> mean_commute_distance;
 	map<string, float> kendall_resident_utility;
 	map<string, float> kendall_resident_utility_at_start; //use to normalization in viz;
+	float residence_energy_per_person;
 	
 	// viz control
 	bool focus_on_kendall <- false;
@@ -541,7 +543,12 @@ global {
 		if cycle = 0 {
 			kendall_resident_utility_at_start <- ['total'::kendall_resident_utility['total'], 'low_inc'::kendall_resident_utility['low_inc'], 'high_inc'::kendall_resident_utility['high_inc']];
 		}
-		write kendall_resident_utility;
+//		write kendall_resident_utility;
+
+		//energy
+		float total_occupied_area_small_scale <- sum((landuse where (each.scale='S')) collect each.crt_total_pop) * residence_area_small_scale;
+		float total_occupied_area_large_scale <- sum((landuse where (each.scale!='S')) collect each.crt_total_pop) * residence_area_large_scale;
+		residence_energy_per_person <-  residence_energy_per_m2 * (total_occupied_area_small_scale + total_occupied_area_large_scale) / kendall_virtual_block.crt_total_pop;
 	}
 	
 	
@@ -1465,11 +1472,9 @@ species landuse {
 		 * new_rent_discount_ratio / new_rent_shift are both maps, keys="all", "low_income", "small_scale", "less_commuting"
 		 * if some keys are not set, use the current value
 		 */
-		 write 'fuck1' + new_rent_discount_ratio;
 		 loop ratio_key over: new_rent_discount_ratio.keys {
 		 	if ratio_key in rent_discount_ratio.keys {rent_discount_ratio[ratio_key] <- new_rent_discount_ratio[ratio_key];}
 		 }
-		 write 'fuck2' + rent_discount_ratio;
 		 loop shift_key over:  new_rent_shift.keys {
 		 	if shift_key in rent_shift.keys {rent_shift[shift_key] <- new_rent_shift[shift_key];}
 		 }
@@ -1616,7 +1621,7 @@ experiment gui type: gui {
 				data "Low Income Proportion" value: kendall_low_inc_ratio color: #blue;
 			}
 			chart "Residence Energy" type:series background: #white position:{0.0,0.67} size:{0.33,0.33}{
-				data "Mean Eerngy" value: 1 color: #red;
+				data "Eerngy per Kendall Resident" value: residence_energy_per_person color: #red;
 			}
 			chart "Resident Mean Utility" type:series background: #white position:{0.33,0.67} size:{0.34,0.33} {
 				data "Overall" value: kendall_resident_utility['total']-kendall_resident_utility_at_start['total'] color: #green;
