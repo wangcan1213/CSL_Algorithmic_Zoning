@@ -54,7 +54,7 @@ global {
 	
 	// preference parameters
 	float b_move_low_inc <- -1.43;
-	float b_move_low_inc_kendall <- -1.83;
+	float b_move_low_inc_kendall <- -1.93;
 	float b_commute_distance_low_inc <- -0.1; //-1.28 /-0.88
 	float b_large_size_low_inc <- 0.0; //0.24
 	float b_price_low_inc <- -0.003;    //-0.004
@@ -62,7 +62,7 @@ global {
 	float b_inc_disparity_low_inc <- -0.00;  //-0.21
 	
 	float b_move_high_inc <- -1.29;
-	float b_move_high_inc_kendall <- -1.59;
+	float b_move_high_inc_kendall <- -1.89;
 	float b_commute_distance_high_inc <- -0.2;  //-1.31 /-0.81
 	float b_large_size_high_inc <- 0.0;  //0.52
 	float b_price_high_inc <- -0.0006;    //-0.0012
@@ -733,7 +733,7 @@ species blockgroup {
 					small_size_apt_ratio <- 0.0;
 				}
 				if crt_total_pop > 0{
-					crt_diversity <- -(crt_low_inc_pop/crt_total_pop) * log(crt_low_inc_pop/crt_total_pop) - (crt_high_inc_pop/crt_total_pop) * log(crt_high_inc_pop/crt_total_pop);
+					crt_diversity <- -(crt_low_inc_pop/crt_total_pop) * ln(crt_low_inc_pop/crt_total_pop) - (crt_high_inc_pop/crt_total_pop) * ln(crt_high_inc_pop/crt_total_pop);
 				} else {
 					crt_diversity <- 0.0;
 				}
