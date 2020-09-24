@@ -50,6 +50,7 @@ global {
 	float office_area_small_scale <- 20.0;
 	float office_area_large_scale <- 40.0;
 	float residence_energy_per_m2 <- 1.0;
+	bool invert_kendall_income <- true;
 	
 	// preference parameters
 	float b_move_low_inc <- -1.43;
@@ -157,6 +158,12 @@ global {
 				small_size_apt_ratio <- init_low_inc_pop / (init_low_inc_pop + init_high_inc_pop);
 			} else {
 				small_size_apt_ratio <- 0.0;
+			}
+			// for kendall blocks, invert low inc an high inc pop so that currently high inc pop are on a larger proportion
+			if geoid in kendall_geoid_list {
+				int tmp1 <- init_low_inc_pop;
+				init_low_inc_pop <- init_high_inc_pop;
+				init_high_inc_pop <- tmp1;
 			}
 		}
 		
