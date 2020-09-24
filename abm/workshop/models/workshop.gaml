@@ -53,6 +53,7 @@ global {
 	
 	// preference parameters
 	float b_move_low_inc <- -1.43;
+	float b_move_low_inc_kendall <- -1.83;
 	float b_commute_distance_low_inc <- -0.1; //-1.28 /-0.88
 	float b_large_size_low_inc <- 0.0; //0.24
 	float b_price_low_inc <- -0.003;    //-0.004
@@ -60,6 +61,7 @@ global {
 	float b_inc_disparity_low_inc <- -0.00;  //-0.21
 	
 	float b_move_high_inc <- -1.29;
+	float b_move_high_inc_kendall <- -1.59;
 	float b_commute_distance_high_inc <- -0.2;  //-1.31 /-0.81
 	float b_large_size_high_inc <- 0.0;  //0.52
 	float b_price_high_inc <- -0.0006;    //-0.0012
@@ -67,7 +69,6 @@ global {
 	float b_inc_disparity_high_inc <- -0.0;  //-0.52
 	
 	//policy parameters
-	float construction_cost_per_m2 <- 1000.0;
 	int subsidy_low_inc <- 50;
 	int sbusidy_less_commute <- 500;
 	float commute_distance_goal <- 2.0;
@@ -235,13 +236,9 @@ global {
 			}
 		}
 		kendall_virtual_block <- first(kendall_virual_block_list);
-//		write 'negative number of vacant hoess: ' + (landuse where (each.crt_nb_available_bedrooms<0)) collect each.id;
-		ask landuse {
-			do update_current_population;
-		}
-		ask blockgroup {
-			do update_current_population;
-		}
+		ask landuse {do update_current_population;}
+		ask blockgroup {do update_current_population;}
+		the_developer.total_rent_at_start <- sum((people where each.live_in_kendall) collect (each.myrent * each.represented_nb_people));
 		do kendall_statistics;
 	}
 	
@@ -253,14 +250,14 @@ global {
 		move_stat <- [];
 		
 		// apply Kenall policy 
-		if cycle = 2 {
-			write "Set new policy";
-			ask 4 among (landuse where (each.usage='vacant')) {
-				do new_constructions(0.0, 1.0);
-				do change_landuse('R', 'S');
-				do set_rent_policy (['less_commuting'::0.7]);
-			}
-		}
+//		if cycle = 2 {
+//			write "Set new policy";
+//			ask 4 among (landuse where (each.usage='vacant')) {
+//				do new_constructions(0.0, 1.0);
+//				do change_landuse('R', 'S');
+//				do set_rent_policy (['less_commuting'::0.7]);
+//			}
+//		}
 		
 		ask people {
 			settled_time <- settled_time + 1;   
@@ -282,7 +279,7 @@ global {
 		}
 //		write 'update over, vacant house=' + kendall_virtual_block.crt_nb_available_bedrooms;
 		do kendall_statistics;
-		ask the_developer {do collect_rent;}
+		ask the_developer {do collect_additional_rent_and_pay_subsidy;}
 		ask people where (each.represented_nb_people <= 0) {
 			if represented_nb_people > 0 {
 				show_size <- 5 + (20-5)*(represented_nb_people-1)/(50-1);
@@ -651,22 +648,33 @@ species government {
 }
 
 species developer {
+	// only consider the balance between expenditure for new constructions and subsidies and income of "additional rent".
+	// additional rent is the difference between current total rent (calculated by rent_base, i.e. do not consider subsidy here) and total rent at start.
+	// this is based on the consideration that total rent at start would be entirely used as fixed cost (maintainment, salary, etc.) and fixed expected profit,
+	// and thus additional rent is the superprofits to stimulate the developer to make some changes. 
 	float finance <- 0.0;
 	float revene_total <- 0.0;
 	float expenditure_total <- 0.0;
+	float subsidy_total <- 0.0;
+	float total_rent_at_start <- 0.0;
 	map<int, map<string, float>> revene_detail <- map([]);
 	map<int, map<string, float>> expenditure_detail <- map([]);
 	init {
 		loop c from:0 to:max_cycle+1 {
 			revene_detail << c::map(['rent'::0]);
-			expenditure_detail << c::map(['construction'::0]);
+			expenditure_detail << c::map(['construction'::0, 'subsidy'::0]);
 		}
 	}
-	action collect_rent {
-		float rent_in_this_cycle <- sum((people where each.live_in_kendall) collect (each.represented_nb_people * each.myrent));
-		revene_detail[cycle]['rent'] <- rent_in_this_cycle;
-		revene_total <- revene_total + rent_in_this_cycle;
-		finance <- finance + rent_in_this_cycle;
+	action collect_additional_rent_and_pay_subsidy {
+//		float rent_in_this_cycle <- sum((people where each.live_in_kendall) collect (each.represented_nb_people * each.myrent));
+		float total_rent_base_this_cycle <- sum((landuse where (each.usage='R')) collect (each.rent_base * each.crt_total_pop));
+		float addtional_rent_this_cycle <- total_rent_base_this_cycle - total_rent_at_start;
+		float subsidy_this_cycle <- sum((people where each.live_in_kendall) collect ((each.home_grid.rent_base - each.myrent) * each.represented_nb_people));
+		subsidy_total <- subsidy_total + subsidy_this_cycle;
+		expenditure_total <- expenditure_total + subsidy_this_cycle;
+		revene_detail[cycle]['rent'] <- addtional_rent_this_cycle;
+		revene_total <- revene_total + addtional_rent_this_cycle;
+		finance <- finance + addtional_rent_this_cycle - subsidy_this_cycle;
 	}
 }
 
@@ -864,6 +872,10 @@ species people schedules: shuffle(people){
 	
 	action select_residence (bool must_move <- false){
 		float t1 <- machine_time;
+		// adjust preference parameters for kendall residents
+		if income = 0 {b_move <- live_in_kendall ? b_move_low_inc_kendall : b_move_low_inc;} 
+		else {b_move <- live_in_kendall ? b_move_high_inc_kendall : b_move_high_inc;}
+		b_mat[0] <- b_move;
 		list<string> alternative_geoid_list <- [home_block.geoid]; //current blockgroup will always be in the choice set
 		bool kendall_in_choice_set <- false;
 		if kendall_virtual_block.crt_nb_available_bedrooms > 0 {  // kendall will be in the choice set as long as there are vacant houses 
@@ -942,6 +954,13 @@ species people schedules: shuffle(people){
 			p <- v collect 0.0;
 			p[chosen_idx] <- 1.0;
 		}
+		// debug
+//		if live_in_kendall {
+//			write alternative_geoid_list;
+//			write v;
+//			write p;
+//			write '-----------------\n';
+//		}
 			
 		loop idx from:0 to:length(p)-1 {
 			int nb_people_to_make_this_choice <- round(represented_nb_people * p[idx]);
@@ -1336,6 +1355,7 @@ species landuse {
 	bool is_affordable;
 	blockgroup associated_blockgroup;
 	list<landuse> my_grid_neighors;
+	map<string,float> crt_local_finance;
 	
 	init {
 		if usage = 'R' {
@@ -1384,7 +1404,7 @@ species landuse {
 	
 	float new_constructions (float far_multiplier, float far_shift, bool add_to_developer_finance <- true) {
 		float far_before <- far;
-		float rent_multiplier <- 7.0;
+		float rent_multiplier <- 2.0;
 		far <- max(0, far*far_multiplier+far_shift);
 		float add_floor_area <- 0.0;
 		float construction_cost <- 0.0;
@@ -1636,7 +1656,7 @@ experiment gui type: gui {
 		}
 //		monitor "Total population" value: sum(people collect (each.represented_nb_people));
 //		monitor "Total population moved" value: sum((people where (each.settled_time<1)) collect (each.represented_nb_people));
-		inspect name:'Kendall' value:kendall_virtual_block type:agent;
+//		inspect name:'Kendall' value:kendall_virtual_block type:agent;
 	}
 	
 }
