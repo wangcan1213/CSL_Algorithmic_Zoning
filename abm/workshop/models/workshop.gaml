@@ -56,18 +56,18 @@ global {
 	float b_move_low_inc <- -1.43;
 	float b_move_low_inc_kendall <- -1.93;
 	float b_commute_distance_low_inc <- -0.1; //-1.28 /-0.88
-	float b_large_size_low_inc <- 0.0; //0.24
+	float b_large_size_low_inc <- 0.24; //0.24
 	float b_price_low_inc <- -0.003;    //-0.004
-	float b_pop_density_low_inc <- -0.00; //-0.0056
-	float b_inc_disparity_low_inc <- -0.00;  //-0.21
+	float b_pop_density_low_inc <- -0.0056; //-0.0056
+	float b_inc_disparity_low_inc <- -0.21;  //-0.21
 	
 	float b_move_high_inc <- -1.29;
 	float b_move_high_inc_kendall <- -1.89;
 	float b_commute_distance_high_inc <- -0.2;  //-1.31 /-0.81
 	float b_large_size_high_inc <- 0.0;  //0.52
 	float b_price_high_inc <- -0.0006;    //-0.0012
-	float b_pop_density_high_inc <- -0.0; //-0.0123
-	float b_inc_disparity_high_inc <- -0.0;  //-0.52
+	float b_pop_density_high_inc <- -0.0123; //-0.0123
+	float b_inc_disparity_high_inc <- -0.52;  //-0.52
 	
 	//policy parameters
 	int subsidy_low_inc <- 50;
@@ -257,14 +257,14 @@ global {
 		move_stat <- [];
 		
 		// apply Kenall policy 
-//		if cycle = 2 {
-//			write "Set new policy";
-//			ask 4 among (landuse where (each.usage='vacant')) {
-//				do new_constructions(0.0, 1.0);
+		if cycle = 2 {
+			write "Set new policy";
+			ask 4 among (landuse where (each.usage='vacant')) {
+				do new_constructions(0.0, 1.0);
 //				do change_landuse('R', 'S');
-//				do set_rent_policy (['less_commuting'::0.7]);
-//			}
-//		}
+				do set_rent_policy (['less_commuting'::0.7]);
+			}
+		}
 		
 		ask people {
 			settled_time <- settled_time + 1;   
@@ -374,6 +374,7 @@ global {
 	}
 	
 	action create_people {
+		list<blockgroup> all_blockgroups <- list(blockgroup);
 		ask blockgroup where (each.is_abstract_whole_kendall = false) {
 			int this_represented_nb_people;
 			bool this_in_kendall <- (geoid in kendall_geoid_list) ? true : false;
@@ -382,6 +383,63 @@ global {
 			list<people> this_low_income_population_work_outof_kendall <- [];
 			list<people> this_high_income_population_work_outof_kendall <- [];
 			
+			
+			// create people who work out of Kendall
+			this_represented_nb_people <- this_in_kendall ? lower_nb_represented_persons : upper_nb_represented_persons;
+			list<people> this_low_income_population <- create_people_given_income_and_blockgroup  (
+				int((init_low_inc_pop) / this_represented_nb_people), 0, 
+				this_in_kendall, this_represented_nb_people, #red
+			);
+			list<people> this_high_income_population <- create_people_given_income_and_blockgroup  (
+				int((init_high_inc_pop) / this_represented_nb_people), 1, 
+				this_in_kendall, this_represented_nb_people, #blue
+			);
+			ask this_low_income_population + this_high_income_population {
+				work_in_kendall <- false;
+				settled_time <- 10000;
+				// randomly determin workplace using a very simple logit model with commute distance as the single regressor
+				list<float> dist_to_blockgruops_from_my_home <- all_blockgroups collect (blockgroup_distance_matrix_map[home_block.geoid][each.geoid] / 1000);
+				list<float> exp_v;
+				if this_in_kendall {
+					exp_v <- dist_to_blockgruops_from_my_home collect exp(each* beta_work_allocation_for_kendall_residents);
+				} else {
+					exp_v <- dist_to_blockgruops_from_my_home collect exp(each* beta_work_allocation);
+				}
+				int choice_idx <- rnd_choice(exp_v);
+				work_block <- all_blockgroups[choice_idx];
+				if work_block.geoid in kendall_geoid_list {
+					work_in_kendall <- true;
+					list<landuse> work_grid_candidates <- landuse where (each.worker_capacity - each.crt_nb_workers >= represented_nb_people);
+					if length(work_grid_candidates) > 0 {
+						work_grid <- any(work_grid_candidates);
+						work_grid.crt_nb_workers <- work_grid.crt_nb_workers + represented_nb_people;
+						work_grid.attached_workers << self;
+						work_loc <- any_location_in(work_grid);
+						work_block <- work_grid.associated_blockgroup;
+					} else {
+						write "Set workplace for Kendall workers: cannot find a inside workplace";
+						work_block <- any(blockgroup);
+						work_loc <- any_location_in(work_block);
+					}
+				} else {
+					work_loc <- any_location_in(work_block);
+				}
+				
+				distance_to_blockgroups_from_my_work_map <- blockgroup_distance_matrix_map[work_block.geoid];
+				nonkendall_geoids_in_3km_from_work <- nonkendall_geoid_list where (distance_to_blockgroups_from_my_work_map[each] <= 3000.0);
+				if work_grid != nil {
+					distance_to_grids_from_my_work_map <- grid_distance_matrix_map[work_grid.id];
+				} else {
+					distance_to_grids_from_my_work_map <- blockgroup_to_grid_distance_matrix_map[work_block.geoid];	
+				}
+				if work_grid != nil and home_grid != nil {commute_distance <- grid_distance_matrix_map[home_grid.id][work_grid.id];}
+				else if work_grid = nil and home_grid = nil {commute_distance <- blockgroup_distance_matrix_map[home_block.geoid][work_block.geoid];}
+				else if work_grid != nil {commute_distance <- blockgroup_to_grid_distance_matrix_map[home_block.geoid][work_grid.id];}
+				else if home_grid != nil {commute_distance <- blockgroup_to_grid_distance_matrix_map[work_block.geoid][home_grid.id];}
+			}
+			
+			// ...
+			/* 
 			// create people who work in Kendall
 			if nb_workers_in_kendall['low'] > 0 {
 				this_represented_nb_people <- nb_workers_in_kendall['low'] >= lower_nb_represented_persons ? lower_nb_represented_persons : 1;
@@ -460,6 +518,7 @@ global {
 				else if work_grid != nil {commute_distance <- blockgroup_to_grid_distance_matrix_map[home_block.geoid][work_grid.id];}
 				else if home_grid != nil {commute_distance <- blockgroup_to_grid_distance_matrix_map[work_block.geoid][home_grid.id];}
 			}
+			*/
 		}
 	}
 	
@@ -682,6 +741,10 @@ species developer {
 		revene_detail[cycle]['rent'] <- addtional_rent_this_cycle;
 		revene_total <- revene_total + addtional_rent_this_cycle;
 		finance <- finance + addtional_rent_this_cycle - subsidy_this_cycle;
+	}
+	
+	action potential_eval {
+		
 	}
 }
 
@@ -931,18 +994,44 @@ species people schedules: shuffle(people){
 		if rent_in_these_blocks[0] > 10000 {
 			rent_in_these_blocks[0] <- (income=0 ? mean_monthly_rent_low_income : mean_monthly_rent_high_income);
 		}
-		if kendall_in_choice_set {
-			string rent_type_in_kendall_block <- get_rent_type([commute_dist_to_these_blocks[1]])[0];
-//			// debug	
-//			write "income = " + income + ", kendall rent type: from " + commute_distance/1000 + " km to " + commute_dist_to_these_blocks[1] + ' km, type=' + rent_type_in_kendall_block;
-			rent_in_these_blocks[1] <- kendall_virtual_block.rent_subgroups[rent_type_in_kendall_block];
-		}
+//		if kendall_in_choice_set {
+//			string rent_type_in_kendall_block <- get_rent_type([commute_dist_to_these_blocks[1]])[0];
+//			rent_in_these_blocks[1] <- kendall_virtual_block.rent_subgroups[rent_type_in_kendall_block];
+//		}
 		list<float> pop_density_in_these_blocks <- alternative_geoid_list collect (blockgroup_lookup_map[each].crt_pop_density);
 		list<float> inc_disparity_to_these_blocks <- alternative_geoid_list collect (abs(blockgroup_lookup_map[each].crt_mean_income - income));
+		
 		matrix<float> tmp_x <- matrix([move_or_stay_to_these_blocks, commute_dist_to_these_blocks, size_in_these_blocks,
 								rent_in_these_blocks, pop_density_in_these_blocks, inc_disparity_to_these_blocks
 		]);
 		list<float> v <- list(tmp_x.b_mat);
+		
+		//if kendall in choice set, will use the max v of all grids for him/her to represent kendall
+		list<landuse> alternative_grid_list <- [];
+		list<float> v_grids <- [];
+		list<string> rent_type_in_these_grids;
+		if kendall_in_choice_set {
+			alternative_grid_list <- landuse where (each.crt_nb_available_bedrooms > 0);
+			list<float> move_or_stay_to_these_grids <- alternative_grid_list collect 1.0;
+			list<float> commute_dist_to_these_grids <- alternative_grid_list collect (distance_to_grids_from_my_work_map[each.id] / 1000);
+			list<float> size_in_these_grids <- alternative_grid_list collect (float(each.is_affordable));
+			rent_type_in_these_grids <- get_rent_type(commute_dist_to_these_grids);
+			list<float> rent_in_these_grids <- [];
+			loop grid_idx from:0 to:length(alternative_grid_list)-1 {
+				landuse this_grid <- alternative_grid_list[grid_idx];
+				string rent_type_in_this_grid <- rent_type_in_these_grids[grid_idx];
+				rent_in_these_grids << this_grid.rent_subgroups[rent_type_in_this_grid];
+			}
+			list<float> pop_density_in_these_grids <- alternative_grid_list collect (each.crt_pop_density);
+			list<float> inc_disparity_to_these_grids <- alternative_grid_list collect (abs(each.crt_mean_income - income));
+			matrix<float> tmp_x_grids <- matrix([move_or_stay_to_these_grids, commute_dist_to_these_grids, size_in_these_grids,
+									rent_in_these_grids, pop_density_in_these_grids, inc_disparity_to_these_grids
+			]);
+			v_grids <- list(tmp_x_grids.b_mat);
+			float max_v_grid <- max(v_grids);
+			v[1] <- max_v_grid;
+		}
+		
 		list<float> p;
 		if represented_nb_people > lower_nb_represented_persons {// if represented_nb_people is big enough, use the real aggreated prob 
 			 p <- v_to_p(v);
@@ -975,25 +1064,6 @@ species people schedules: shuffle(people){
 				// choose to stay, pass
 			} else if kendall_in_choice_set and idx = 1 and nb_people_to_make_this_choice > 0 { 
 				// choose to move to kendall, do a secenod choice on sepecific landuse grid
-				list<landuse> alternative_grid_list <- landuse where (each.crt_nb_available_bedrooms > 0);
-				if length(alternative_grid_list) = 0 {break;}
-				list<float> move_or_stay_to_these_grids <- alternative_grid_list collect 1.0;
-				list<float> commute_dist_to_these_grids <- alternative_grid_list collect (distance_to_grids_from_my_work_map[each.id] / 1000);
-				list<float> size_in_these_grids <- alternative_grid_list collect (float(each.is_affordable));
-//				list<float> rent_in_these_grids <- alternative_grid_list collect (each.rent);
-				list<string> rent_type_in_these_grids <- get_rent_type(commute_dist_to_these_grids);
-				list<float> rent_in_these_grids;
-				loop grid_idx from:0 to:length(alternative_grid_list)-1 {
-					landuse this_grid <- alternative_grid_list[grid_idx];
-					string rent_type_in_this_grid <- rent_type_in_these_grids[grid_idx];
-					rent_in_these_grids <- rent_in_these_grids + this_grid.rent_subgroups[rent_type_in_this_grid];
-				}
-				list<float> pop_density_in_these_grids <- alternative_grid_list collect (each.crt_pop_density);
-				list<float> inc_disparity_to_these_grids <- alternative_grid_list collect (abs(each.crt_mean_income - income));
-				matrix<float> tmp_x_grids <- matrix([move_or_stay_to_these_grids, commute_dist_to_these_grids, size_in_these_grids,
-										rent_in_these_grids, pop_density_in_these_grids, inc_disparity_to_these_grids
-				]);
-				list<float> v_grids <- list(tmp_x_grids.b_mat);
 				list<float> p_grids;
 				if nb_people_to_make_this_choice > lower_nb_represented_persons {// if nb_people_to_make_this_choice is big enough, use the real aggreated prob 
 					 p_grids <- v_to_p(v_grids);
