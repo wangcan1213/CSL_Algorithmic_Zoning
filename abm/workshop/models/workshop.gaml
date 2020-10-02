@@ -31,7 +31,7 @@ global {
 	list<blockgroup> nonkendall_blockgroups;
 	list<string> nonkendall_geoid_list;
 	blockgroup kendall_virtual_block;
-	float far_discount <- 0.7;    //it seems that current landuse plan provides too many residences
+	float far_discount <- 0.5;    //it seems that current landuse plan provides too many residences
 	list<map> move_stat <- [];
 	bool consider_nonkendall_resident_capacity <- false;
 	int max_cycle <- 12;
@@ -39,12 +39,12 @@ global {
 	
 	int lower_nb_represented_persons <- 3;     //mainly used for kendall landuse, and as the unit for a real move
 	int upper_nb_represented_persons <- 120;   //mainly used for outside blockgroup
-	int nb_nonkendall_blocks_in_hom_loc_choice <- 6;
+	int nb_nonkendall_blocks_in_hom_loc_choice <- 8;
 	float ratio_of_people_considering_move_at_each_step <- 0.05;
 	float mean_monthly_rent_low_income <- 1112.0; //25% percentile for all rents, used as rent of current residence for low inc person if block mean rent unavailabe
 	float mean_monthly_rent_high_income <- 1429.0; //75% percentile for all rents, used as rent of current residence for high inc person if block mean rent unavailabe
 	float beta_work_allocation <- -0.5;
-	float beta_work_allocation_for_kendall_residents <- -0.5;
+	float beta_work_allocation_for_kendall_residents <- -0.6;
 	float residence_area_small_scale <- 40.0;
 	float residence_area_large_scale <- 80.0;
 	float office_area_small_scale <- 20.0;
@@ -53,29 +53,30 @@ global {
 	bool invert_kendall_income <- true;
 	float distance_from_object_block_to_grid_km <- 5.0;
 	// less commuting criteria
-	float min_commute_distance_before_criteria <- 5.0;
+	float min_commute_distance_before_criteria <- 4.0;
 	float min_decrease_ratio_criteria <- 0.5;
 	float min_decrease_distance_criteria <- 0.5;
 
 	
 	// preference parameters
-	float b_move_low_inc <- -1.43;
-	float b_move_low_inc_kendall <- -1.93;
-	float b_commute_distance_low_inc <- -0.1; //-1.28 /-0.88
-	float b_large_size_low_inc <- 0.24; //0.24
+	float b_move_low_inc <- -1.3;
+	float b_move_low_inc_kendall <- -1.4;
+	float b_commute_distance_low_inc <- -0.01; //-1.28 /-0.88
+	float b_large_size_low_inc <- 0.0; //0.24
 	float b_price_low_inc <- -0.003;    //-0.004
-	float b_pop_density_low_inc <- -0.0056; //-0.0056
-	float b_inc_disparity_low_inc <- -0.21;  //-0.21
+	float b_pop_density_low_inc <- -0.000; //-0.0056
+	float b_inc_disparity_low_inc <- -0.0;  //-0.21
 	
-	float b_move_high_inc <- -1.29;
-	float b_move_high_inc_kendall <- -1.89;
-	float b_commute_distance_high_inc <- -0.2;  //-1.31 /-0.81
+	float b_move_high_inc <- -1.3;  //-1.29
+	float b_move_high_inc_kendall <- -1.4;
+	float b_commute_distance_high_inc <- -0.01;  //-1.31 /-0.81
 	float b_large_size_high_inc <- 0.0;  //0.52
 	float b_price_high_inc <- -0.0006;    //-0.0012
-	float b_pop_density_high_inc <- -0.0123; //-0.0123
-	float b_inc_disparity_high_inc <- -0.52;  //-0.52
+	float b_pop_density_high_inc <- -0.0; //-0.0123
+	float b_inc_disparity_high_inc <- -0.0;  //-0.52
 	
 	//policy parameters
+	bool incentive_policy <- false;
 	bool dynamic_policy <- false;
 	float diversity_target <- 0.7;
 	float low_inc_pop_ratio_target <- 0.5;
@@ -89,6 +90,7 @@ global {
 	string new_construction_grids_string <- 'none';
 	string new_construction_far_string <- '*1, +0';
 	string new_construction_scale <- 'Small';
+	float construction_intensity <- 1.0;
 	string rent_discount_grids_string <- 'none';
 	float rent_discount_ratio_all <- 1.0;
 	float rent_discount_ratio_low_inc <- 1.0;
@@ -108,6 +110,7 @@ global {
 	list<int> move_max_value_record_list; //record the max value of move_to_kendall & move_out_of_kendall, so as to set crt_move_y_axis_upper_range
 	int crt_move_y_axis_upper_range;   //to set the max value of y-axis range
 	map<string, float> mean_commute_distance;
+	map<string, float> commute_distance_decrease <- ['totoal'::0.0, 'mean'::0.0];
 	map<string, float> kendall_resident_utility;
 	map<string, float> kendall_resident_utility_at_start; //use to normalization in viz;
 	float residence_energy_per_person;
@@ -125,6 +128,7 @@ global {
 	rgb legend_border_color <- #black;
 	
 	init {
+		seed <- 10.0;
 		// load some pre-cooked data
 		if file_exists(blockgroup_distance_matrix_json_path) {
 			float t1 <- machine_time;
@@ -266,7 +270,7 @@ global {
 		kendall_virtual_block <- first(kendall_virual_block_list);
 		ask landuse {do update_current_population;}
 		ask blockgroup {do update_current_population;}
-		the_developer.total_rent_at_start <- sum((people where each.live_in_kendall) collect (each.myrent * each.represented_nb_people));
+		the_developer.total_rent_at_start <- sum((people where each.live_in_kendall) collect (each.myrent * each.represented_nb_people))*0.9;
 		do kendall_statistics;
 	}
 	
@@ -278,24 +282,40 @@ global {
 		move_stat <- [];
 		
 		// apply static incentive policy  
-		if dynamic_policy=false and (new_construction_grids_string!='none' or rent_discount_grids_string!='none'){
+		if incentive_policy=true and dynamic_policy=false {
 			if cycle = 1 {do apply_static_incentive_policy;}
 		}
 		
 		// apply dynamic incentive policy
-		if dynamic_policy=true and mod(cycle,4) = 1 {
+		if incentive_policy=true and dynamic_policy=true and mod(cycle,4) = 1 {
 			do apply_dynamic_incentive_policy;
 		}
 
 		ask people {
 			settled_time <- settled_time + 1;   
-			if ((work_in_kendall=true and flip(0.6)) or flip(ratio_of_people_considering_move_at_each_step)) and settled_time>=5 {
-//			if (flip(ratio_of_people_considering_move_at_each_step)) and settled_time>=5 {
+		}
+		
+		list<people> all_people <- people where (each.represented_nb_people>0 and each.settled_time>=5);
+		list<people> people_not_in_kendall_and_has_potential_for_less_commuting;
+		if incentive_policy=true and rent_discount_ratio_less_commuting<0.95{
+			people_not_in_kendall_and_has_potential_for_less_commuting <- people where (
+				each.represented_nb_people>0 and each.settled_time>=5 and each.live_in_kendall=false and
+				each.commute_distance/1000 >= min_commute_distance_before_criteria and
+				each.distance_to_blockgroups_from_my_work_map['250173523001'] < each.commute_distance*(1-min_decrease_ratio_criteria)
+			); 
+			all_people <- people_not_in_kendall_and_has_potential_for_less_commuting + (
+				all_people - people_not_in_kendall_and_has_potential_for_less_commuting
+			);
+		}
+		write "len="+length(people_not_in_kendall_and_has_potential_for_less_commuting);
+		ask all_people {
+//			write "commute_distance: "+commute_distance + ", to_kendall: " + distance_to_blockgroups_from_my_work_map['250173523001'];
+//			if ((work_in_kendall=true and flip(0.6)) or flip(ratio_of_people_considering_move_at_each_step)) {
+			if flip(ratio_of_people_considering_move_at_each_step) {
+//			if flip(1) {
 				do select_residence;
 				do update_landuse_and_blockgroup_population_info (true, true);
 			}
-//			do update_landuse_and_blockgroup_population_info (true, true);
-//			ask kendall_virtual_block {do update_current_population (true);}
 		}
 //		write 'people over, vacant house=' + kendall_virtual_block.crt_nb_available_bedrooms;
 		ask landuse {
@@ -358,28 +378,33 @@ global {
 	
 	action reference_info {
 //		write machine_time;
-//		write 'negative number of vacant hoess: ' + (landuse where (each.crt_nb_available_bedrooms<0)) collect each.id;
-		list<people> tmp_people <- people where (each.work_in_kendall and each.live_in_kendall=false and each.represented_nb_people>0);
+//		list<people> tmp_people <- people where (each.work_in_kendall and each.live_in_kendall=false and each.represented_nb_people>0);
+		
 //		write "Debug info start: \n";
 //		write '\n\n==================\nPoeple work in Kendall but live outside: ' + sum(tmp_people collect each.represented_nb_people);
 //		write tmp_people;
 //		write tmp_people collect each.represented_nb_people;
-		int nb_all_others;
-		int nb_less_commuting;
-		int nb_less_commuting_and_low_income;
-		int nb_low_income;
-		int nb_live_in_kendall;
-		ask people where each.live_in_kendall {
-			nb_live_in_kendall <- nb_live_in_kendall + represented_nb_people;
-			if my_rent_type = 'all_others' {nb_all_others <- nb_all_others + represented_nb_people;}
-			else if my_rent_type = 'less_commuting' {nb_less_commuting <- nb_less_commuting + represented_nb_people;}
-			else if my_rent_type = 'low_income_and_less_commuting' {nb_less_commuting_and_low_income <- nb_less_commuting_and_low_income + represented_nb_people;}
-			else if my_rent_type = 'low_income' {nb_low_income <- nb_low_income + represented_nb_people;}
-			else {write "Unknow rent_type: " + my_rent_type;}
-		}
-		write  'total=' + nb_live_in_kendall + ', all_others=' + nb_all_others + ', low_income=' + nb_low_income + ', less_commuting=' + 
-			nb_less_commuting + ', low_income_and_less_commuting=' + nb_less_commuting_and_low_income;
-		write kendall_virtual_block.rent_subgroups;
+
+//		int nb_all_others;
+//		int nb_less_commuting;
+//		int nb_less_commuting_and_low_income;
+//		int nb_low_income;
+//		int nb_live_in_kendall;
+//		ask people where each.live_in_kendall {
+//			nb_live_in_kendall <- nb_live_in_kendall + represented_nb_people;
+//			if my_rent_type = 'all_others' {nb_all_others <- nb_all_others + represented_nb_people;}
+//			else if my_rent_type = 'less_commuting' {nb_less_commuting <- nb_less_commuting + represented_nb_people;}
+//			else if my_rent_type = 'low_income_and_less_commuting' {nb_less_commuting_and_low_income <- nb_less_commuting_and_low_income + represented_nb_people;}
+//			else if my_rent_type = 'low_income' {nb_low_income <- nb_low_income + represented_nb_people;}
+//			else {write "Unknow rent_type: " + my_rent_type;}
+//		}
+//		write  'total=' + nb_live_in_kendall + ', all_others=' + nb_all_others + ', low_income=' + nb_low_income + ', less_commuting=' + 
+//			nb_less_commuting + ', low_income_and_less_commuting=' + nb_less_commuting_and_low_income;
+//		write kendall_virtual_block.rent_subgroups;
+		write 'mean_commute_distance: '+ mean_commute_distance['live_in_kendall'];
+//		write nb_nonkendall_blocks_in_hom_loc_choice/length(nonkendall_geoid_list+1);
+		write kendall_virtual_block.crt_total_pop;
+		write "kendall_diversity: "+kendall_diversity+", kendall_low_inc_ratio: "+kendall_low_inc_ratio;
 	}
 	
 	action load_worker_data {
@@ -456,6 +481,7 @@ global {
 				else if work_grid = nil and home_grid = nil {commute_distance <- blockgroup_distance_matrix_map[home_block.geoid][work_block.geoid];}
 				else if work_grid != nil {commute_distance <- blockgroup_to_grid_distance_matrix_map[home_block.geoid][work_grid.id];}
 				else if home_grid != nil {commute_distance <- blockgroup_to_grid_distance_matrix_map[work_block.geoid][home_grid.id];}
+				commute_distance_init <- commute_distance;
 			}
 			
 			// ...
@@ -595,16 +621,25 @@ global {
 		kendall_finance <- 0.0;
 		
 		// commute calculation
-		mean_commute_distance['all'] <- sum(people collect (each.represented_nb_people * each.commute_distance)) / sum(people collect each.represented_nb_people);
-		list<people> people_work_in_kendall <- people where each.work_in_kendall;
-		list<people> people_live_in_kendall <- people where each.live_in_kendall;
-		list<people> people_work_or_live_in_kendall <- people where (each.work_in_kendall or each.live_in_kendall);
+//		mean_commute_distance['all'] <- sum(people collect (each.represented_nb_people * each.commute_distance)) / sum(people collect each.represented_nb_people);
+		list<people> people_all <- people where (each.represented_nb_people>0);
+		list<people> people_work_in_kendall <- people where (each.work_in_kendall and each.represented_nb_people>0);
+		list<people> people_live_in_kendall <- people where (each.live_in_kendall and each.represented_nb_people>0);
+		list<people> people_work_or_live_in_kendall <- people where ((each.work_in_kendall or each.live_in_kendall) and each.represented_nb_people>0);
+		mean_commute_distance['all'] <- sum(people_all collect (each.represented_nb_people * each.commute_distance)) / 
+			sum(people_all collect each.represented_nb_people);
 		mean_commute_distance['work_in_kendall'] <- sum(people_work_in_kendall collect (each.represented_nb_people * each.commute_distance)) / 
 			sum(people_work_in_kendall collect each.represented_nb_people);
 		mean_commute_distance['live_in_kendall'] <- sum(people_live_in_kendall collect (each.represented_nb_people * each.commute_distance)) / 
 			sum(people_live_in_kendall collect each.represented_nb_people);
 		mean_commute_distance['work_or_live_in_kendall'] <- sum(people_work_or_live_in_kendall collect (each.represented_nb_people * each.commute_distance)) / 
 			sum(people_work_or_live_in_kendall collect each.represented_nb_people);
+			
+		float total_commute_distance_decrease <- sum((people where each.live_in_kendall) collect (
+			each.represented_nb_people * (each.commute_distance_init - each.commute_distance) / 1000
+		));
+		float mean_commute_distance_decrease <- total_commute_distance_decrease / sum((people where each.live_in_kendall) collect each.represented_nb_people);
+		commute_distance_decrease <- ['total'::total_commute_distance_decrease, 'mean'::mean_commute_distance_decrease];
 			
 		move_max_value_record_list << max(move_to_kendall_pop.values + move_out_of_kendall_pop);  
 //		move_max_value_record_list <- [1,2,3,4,5,6,7,8] collect move_max_value_record_list[max(length(move_max_value_record_list)-each, 0)];  //keep only the last 3 elements
@@ -634,7 +669,61 @@ global {
 		residence_energy_per_person <-  residence_energy_per_m2 * (total_occupied_area_small_scale + total_occupied_area_large_scale) / kendall_virtual_block.crt_total_pop;
 	}
 	
-	action apply_static_incentive_policy{
+	action apply_static_incentive_policy {
+//		list<landuse> rent_discount_grids <- 5 among (landuse where (each.usage='R'));
+		list<landuse> rent_discount_grids <- 6 among (landuse where (each.usage='vacant'));
+//		list<landuse> rent_discount_grids <- landuse where (each.id in ['g80', 'g79', 'g81', 'g82', 'g83']);
+//		list<landuse> new_construction_grids <- 5 among (landuse where ((each.usage='R' and each.scale='R') or each.usage='vacant'));
+		list<landuse> new_construction_grids <- rent_discount_grids;
+		//calculate subsidy need to pay due to rent discount
+		ask rent_discount_grids {
+			do set_rent_policy (['all'::rent_discount_ratio_all, 'low_income'::rent_discount_ratio_low_inc,
+				 'small_scale'::rent_discount_ratio_small_scale, 'less_commuting'::rent_discount_ratio_less_commuting]
+			);
+		}
+//		float expected_subsidy <- rent_discount_grids collect (each.crt_nb_available_bedrooms*0.8*each.rent_base);
+		float expected_subsidy <- 0.0;
+		ask rent_discount_grids {
+			expected_subsidy <- expected_subsidy + crt_nb_available_bedrooms * (rent_base - min(rent_subgroups.values)) * 0.7;
+		}
+		
+		//anyway, do it first
+		float new_construction_far_shift_max <- 1.2;
+		float new_construction_far_shift <- new_construction_far_shift_max * construction_intensity;
+		ask new_construction_grids {
+			do new_constructions(1.0, new_construction_far_shift);
+//			do change_landuse('R', 'S');
+		}
+		int nb_small_scale_for_new_construction <- 0;
+		if rent_discount_ratio_small_scale <= 0.5 {
+			nb_small_scale_for_new_construction <- 6;
+		} else if rent_discount_ratio_small_scale <= 0.7 {
+			nb_small_scale_for_new_construction <- 4;
+		} else if rent_discount_ratio_small_scale <= 0.95 {
+			nb_small_scale_for_new_construction <- 2;
+		} else {
+			nb_small_scale_for_new_construction <- 0;
+		}
+		list<landuse> new_construction_grids_small_scale <- nb_small_scale_for_new_construction among new_construction_grids;
+		list<landuse> new_construction_grids_large_scale <- new_construction_grids - new_construction_grids_small_scale;
+		ask new_construction_grids_small_scale {
+			do change_landuse('R', 'S');
+		}
+		ask new_construction_grids_large_scale {
+			do change_landuse('R', 'L');
+		}
+		
+		ask rent_discount_grids {
+			do set_rent_policy (['all'::rent_discount_ratio_all, 'low_income'::rent_discount_ratio_low_inc,
+				 'small_scale'::rent_discount_ratio_small_scale, 'less_commuting'::rent_discount_ratio_less_commuting]
+			);
+		}
+		
+		
+		
+	}
+	
+	action apply_static_incentive_policy_complex{
 		list<landuse> new_construction_grids <- parse_input_grids(new_construction_grids_string);
 		list<landuse> rent_discount_grids <- parse_input_grids(rent_discount_grids_string);
 		list<string> tmp <- new_construction_far_string split_with ',';
@@ -1022,7 +1111,7 @@ species people schedules: shuffle(people){
 	bool live_in_kendall;
 	bool work_in_kendall;
 	float commute_distance;
-	float commute_distance_last;
+	float commute_distance_init;
 	landuse home_grid;
 	point home_loc;
 	blockgroup home_block;
@@ -1070,9 +1159,8 @@ species people schedules: shuffle(people){
 		list<string> alternative_geoid_list <- [home_block.geoid]; //current blockgroup will always be in the choice set
 		bool kendall_in_choice_set <- false;
 		if kendall_virtual_block.crt_nb_available_bedrooms > 0 {  // kendall will be in the choice set as long as there are vacant houses 
-			if (distance_to_blockgroups_from_my_work_map['250173523001'] < 3000) or (
-				distance_to_blockgroups_from_my_work_map['250173523001'] >= 3000 and 
-				flip(nb_nonkendall_blocks_in_hom_loc_choice/length(nonkendall_geoid_list+1))
+			if (distance_to_blockgroups_from_my_work_map['250173523001'] < 3000 and flip(0.2)) or 
+			   (distance_to_blockgroups_from_my_work_map['250173523001'] >= 3000 and flip(2*nb_nonkendall_blocks_in_hom_loc_choice/length(nonkendall_geoid_list+1))
 			) {
 				kendall_in_choice_set <- true;
 				alternative_geoid_list << 'kendall';
@@ -1178,6 +1266,10 @@ species people schedules: shuffle(people){
 //			write p;
 //			write '-----------------\n';
 //		}
+//		if kendall_in_choice_set {
+//			write p;
+//			write round(represented_nb_people * p[1]);
+//		}
 			
 		loop idx from:0 to:length(p)-1 {
 			int nb_people_to_make_this_choice <- round(represented_nb_people * p[idx]);
@@ -1185,62 +1277,115 @@ species people schedules: shuffle(people){
 				// choose to stay, pass
 			} else if kendall_in_choice_set and idx = 1 and nb_people_to_make_this_choice > 0 { 
 				// choose to move to kendall, do a secenod choice on sepecific landuse grid
-				list<float> p_grids;
-				if nb_people_to_make_this_choice > lower_nb_represented_persons {// if nb_people_to_make_this_choice is big enough, use the real aggreated prob 
-					 p_grids <- v_to_p(v_grids);
-				} else { //if too few people make choice, aggreated prob may cause round error, like round([0.3,0.3,0.4] * 1 person) = [0,0,0]
-//					int chosen_idx <- to_choose(v_grids);   // to avoid this round error, use simulated prob by Monte Carlo method
-					int chosen_idx <- v_grids index_of max(v_grids);  // to avoid this roud error, always choose the alt with max v
-					p_grids <- v_grids collect 0.0;
-					p_grids[chosen_idx] <- 1.0;
+				// use a easy way 
+				int tmp_nb_people_to_make_this_choice <- nb_people_to_make_this_choice;
+				int grid_idx <- 0;
+				list<int> sorted_grid_idx <- (v_grids sort_by -each) collect (v_grids index_of each);
+				list<landuse> sorted_grids <- sorted_grid_idx collect alternative_grid_list[each];
+				loop while: tmp_nb_people_to_make_this_choice>0 and grid_idx<length(alternative_grid_list) {
+					landuse destination_grid <- alternative_grid_list[grid_idx];
+					int nb_people_to_move_to_this_grid <- min(destination_grid.crt_nb_available_bedrooms, tmp_nb_people_to_make_this_choice);
+					tmp_nb_people_to_make_this_choice <- tmp_nb_people_to_make_this_choice - nb_people_to_move_to_this_grid;
+					represented_nb_people <- represented_nb_people - nb_people_to_move_to_this_grid;
+					home_block.crt_nb_available_bedrooms <- home_block.crt_nb_available_bedrooms + nb_people_to_move_to_this_grid;
+					if home_grid != nil {
+						home_grid.crt_nb_available_bedrooms <- home_grid.crt_nb_available_bedrooms + nb_people_to_move_to_this_grid;
+						kendall_virtual_block.crt_nb_available_bedrooms <- kendall_virtual_block.crt_nb_available_bedrooms + nb_people_to_move_to_this_grid;
+					}
+					destination_grid.associated_blockgroup.crt_nb_available_bedrooms <- max( 
+						destination_grid.associated_blockgroup.crt_nb_available_bedrooms - nb_people_to_move_to_this_grid, 0
+					);
+					kendall_virtual_block.crt_nb_available_bedrooms <- max(
+						kendall_virtual_block.crt_nb_available_bedrooms - nb_people_to_move_to_this_grid, 0
+					);
+					destination_grid.crt_nb_available_bedrooms <- max(
+						destination_grid.crt_nb_available_bedrooms - nb_people_to_move_to_this_grid, 0
+					);
+					if live_in_kendall = false {  // moving from other places to kendall
+						move_to_kendall_pop[income] <- move_to_kendall_pop[income] + nb_people_to_move_to_this_grid;
+					}
+					
+					list<people> people_list_in_destination_grid_with_same_attribute <- destination_grid.attached_residents where (
+						each.income=income and each.work_block=work_block and each.work_grid=work_grid and each.my_rent_type=rent_type_in_these_grids[grid_idx]
+					);
+					if length(people_list_in_destination_grid_with_same_attribute) > 0 {
+						ask first(people_list_in_destination_grid_with_same_attribute) {
+							represented_nb_people <- represented_nb_people + nb_people_to_move_to_this_grid;
+						}
+						move_stat << map(['from'::home_loc, 'to'::first(people_list_in_destination_grid_with_same_attribute).home_loc, 
+							'pop'::nb_people_to_move_to_this_grid, 'work_in_kendall'::work_in_kendall, 'live_in_kendall'::true]);
+					} else {
+						people new_generated_people <- copy_myself(
+							destination_grid.associated_blockgroup, destination_grid, nil, nb_people_to_move_to_this_grid, 0
+						);
+						destination_grid.associated_blockgroup.attached_residents << new_generated_people;
+						kendall_virtual_block.attached_residents << new_generated_people;
+						destination_grid.attached_residents << new_generated_people;
+						move_stat << map(['from'::home_loc, 'to'::new_generated_people.home_loc , 'pop'::nb_people_to_move_to_this_grid,
+							'work_in_kendall'::work_in_kendall, 'live_in_kendall'::true]);
+					}
+					
+					grid_idx <- grid_idx + 1;
 				}
 				
-				loop grid_idx from:0 to:length(alternative_grid_list)-1 {
-					int nb_people_to_move_to_this_grid <- round(nb_people_to_make_this_choice * p_grids[grid_idx]);
-					if nb_people_to_move_to_this_grid > 0 {
-						landuse destination_grid <- alternative_grid_list[grid_idx];
-						// in case that the actually number of vacant bedrooms is less than the number of people going to move to this grid
-						nb_people_to_move_to_this_grid <- min(nb_people_to_move_to_this_grid, destination_grid.crt_nb_available_bedrooms);
-						represented_nb_people <- represented_nb_people - nb_people_to_move_to_this_grid;
-						home_block.crt_nb_available_bedrooms <- home_block.crt_nb_available_bedrooms + nb_people_to_move_to_this_grid;
-						if home_grid != nil {
-							home_grid.crt_nb_available_bedrooms <- home_grid.crt_nb_available_bedrooms + nb_people_to_move_to_this_grid;
-							kendall_virtual_block.crt_nb_available_bedrooms <- kendall_virtual_block.crt_nb_available_bedrooms + nb_people_to_move_to_this_grid;
-						}
-						destination_grid.associated_blockgroup.crt_nb_available_bedrooms <- max( 
-							destination_grid.associated_blockgroup.crt_nb_available_bedrooms - nb_people_to_move_to_this_grid, 0
-						);
-						kendall_virtual_block.crt_nb_available_bedrooms <- max(
-							kendall_virtual_block.crt_nb_available_bedrooms - nb_people_to_move_to_this_grid, 0
-						);
-						destination_grid.crt_nb_available_bedrooms <- max(
-							destination_grid.crt_nb_available_bedrooms - nb_people_to_move_to_this_grid, 0
-						);
-						if live_in_kendall = false {  // moving from other places to kendall
-							move_to_kendall_pop[income] <- move_to_kendall_pop[income] + nb_people_to_move_to_this_grid;
-						}
-						
-						list<people> people_list_in_destination_grid_with_same_attribute <- destination_grid.attached_residents where (
-							each.income=income and each.work_block=work_block and each.work_grid=work_grid and each.my_rent_type=rent_type_in_these_grids[grid_idx]
-						);
-						if length(people_list_in_destination_grid_with_same_attribute) > 0 {
-							ask first(people_list_in_destination_grid_with_same_attribute) {
-								represented_nb_people <- represented_nb_people + nb_people_to_move_to_this_grid;
-							}
-							move_stat << map(['from'::home_loc, 'to'::first(people_list_in_destination_grid_with_same_attribute).home_loc, 
-								'pop'::nb_people_to_move_to_this_grid, 'work_in_kendall'::work_in_kendall, 'live_in_kendall'::true]);
-						} else {
-							people new_generated_people <- copy_myself(
-								destination_grid.associated_blockgroup, destination_grid, nil, nb_people_to_move_to_this_grid, 0
-							);
-							destination_grid.associated_blockgroup.attached_residents << new_generated_people;
-							kendall_virtual_block.attached_residents << new_generated_people;
-							destination_grid.attached_residents << new_generated_people;
-							move_stat << map(['from'::home_loc, 'to'::new_generated_people.home_loc , 'pop'::nb_people_to_move_to_this_grid,
-								'work_in_kendall'::work_in_kendall, 'live_in_kendall'::true]);
-						}
-					}
-				} 
+				
+//				list<float> p_grids;
+//				if nb_people_to_make_this_choice > lower_nb_represented_persons {// if nb_people_to_make_this_choice is big enough, use the real aggreated prob 
+//					 p_grids <- v_to_p(v_grids);
+//				} else { //if too few people make choice, aggreated prob may cause round error, like round([0.3,0.3,0.4] * 1 person) = [0,0,0]
+////					int chosen_idx <- to_choose(v_grids);   // to avoid this round error, use simulated prob by Monte Carlo method
+//					int chosen_idx <- v_grids index_of max(v_grids);  // to avoid this roud error, always choose the alt with max v
+//					p_grids <- v_grids collect 0.0;
+//					p_grids[chosen_idx] <- 1.0;
+//				}
+//				
+//				loop grid_idx from:0 to:length(alternative_grid_list)-1 {
+//					int nb_people_to_move_to_this_grid <- round(nb_people_to_make_this_choice * p_grids[grid_idx]);
+//					write nb_people_to_move_to_this_grid;
+//					if nb_people_to_move_to_this_grid > 0 {
+//						landuse destination_grid <- alternative_grid_list[grid_idx];
+//						// in case that the actually number of vacant bedrooms is less than the number of people going to move to this grid
+//						nb_people_to_move_to_this_grid <- min(nb_people_to_move_to_this_grid, destination_grid.crt_nb_available_bedrooms);
+//						represented_nb_people <- represented_nb_people - nb_people_to_move_to_this_grid;
+//						home_block.crt_nb_available_bedrooms <- home_block.crt_nb_available_bedrooms + nb_people_to_move_to_this_grid;
+//						if home_grid != nil {
+//							home_grid.crt_nb_available_bedrooms <- home_grid.crt_nb_available_bedrooms + nb_people_to_move_to_this_grid;
+//							kendall_virtual_block.crt_nb_available_bedrooms <- kendall_virtual_block.crt_nb_available_bedrooms + nb_people_to_move_to_this_grid;
+//						}
+//						destination_grid.associated_blockgroup.crt_nb_available_bedrooms <- max( 
+//							destination_grid.associated_blockgroup.crt_nb_available_bedrooms - nb_people_to_move_to_this_grid, 0
+//						);
+//						kendall_virtual_block.crt_nb_available_bedrooms <- max(
+//							kendall_virtual_block.crt_nb_available_bedrooms - nb_people_to_move_to_this_grid, 0
+//						);
+//						destination_grid.crt_nb_available_bedrooms <- max(
+//							destination_grid.crt_nb_available_bedrooms - nb_people_to_move_to_this_grid, 0
+//						);
+//						if live_in_kendall = false {  // moving from other places to kendall
+//							move_to_kendall_pop[income] <- move_to_kendall_pop[income] + nb_people_to_move_to_this_grid;
+//						}
+//						
+//						list<people> people_list_in_destination_grid_with_same_attribute <- destination_grid.attached_residents where (
+//							each.income=income and each.work_block=work_block and each.work_grid=work_grid and each.my_rent_type=rent_type_in_these_grids[grid_idx]
+//						);
+//						if length(people_list_in_destination_grid_with_same_attribute) > 0 {
+//							ask first(people_list_in_destination_grid_with_same_attribute) {
+//								represented_nb_people <- represented_nb_people + nb_people_to_move_to_this_grid;
+//							}
+//							move_stat << map(['from'::home_loc, 'to'::first(people_list_in_destination_grid_with_same_attribute).home_loc, 
+//								'pop'::nb_people_to_move_to_this_grid, 'work_in_kendall'::work_in_kendall, 'live_in_kendall'::true]);
+//						} else {
+//							people new_generated_people <- copy_myself(
+//								destination_grid.associated_blockgroup, destination_grid, nil, nb_people_to_move_to_this_grid, 0
+//							);
+//							destination_grid.associated_blockgroup.attached_residents << new_generated_people;
+//							kendall_virtual_block.attached_residents << new_generated_people;
+//							destination_grid.attached_residents << new_generated_people;
+//							move_stat << map(['from'::home_loc, 'to'::new_generated_people.home_loc , 'pop'::nb_people_to_move_to_this_grid,
+//								'work_in_kendall'::work_in_kendall, 'live_in_kendall'::true]);
+//						}
+//					}
+//				} 
 				
 			} else if (idx > 1 or (kendall_in_choice_set=false and idx=1)) and nb_people_to_make_this_choice > 0 { 
 				//choose to move to blockgroups other than kendall
@@ -1330,7 +1475,8 @@ species people schedules: shuffle(people){
 		} else {
 			distance_to_grids_from_my_work_map <- blockgroup_to_grid_distance_matrix_map[work_block.geoid];	
 		}
-		if work_grid != nil and home_grid != nil {commute_distance <- grid_distance_matrix_map[home_grid.id][work_grid.id];}
+		if work_grid != nil and home_grid != nil {
+			commute_distance <- grid_distance_matrix_map[home_grid.id][work_grid.id];}
 		else if work_grid = nil and home_grid = nil {commute_distance <- blockgroup_distance_matrix_map[home_block.geoid][work_block.geoid];}
 		else if work_grid != nil {commute_distance <- blockgroup_to_grid_distance_matrix_map[home_block.geoid][work_grid.id];}
 		else if home_grid != nil {commute_distance <- blockgroup_to_grid_distance_matrix_map[work_block.geoid][home_grid.id];}	
@@ -1431,6 +1577,7 @@ species people schedules: shuffle(people){
 			work_loc <- myself.work_loc;
 			work_block <- myself.work_block;
 			commute_distance <- myself.commute_distance;   //just for calculation of my_rent_type: whether commute_distance decrease
+			commute_distance_init <- myself.commute_distance_init;
 			float new_commute_distance;
 			if work_grid != nil and home_grid != nil {new_commute_distance <- grid_distance_matrix_map[home_grid.id][work_grid.id];}
 			else if work_grid = nil and home_grid = nil {new_commute_distance <- blockgroup_distance_matrix_map[home_block.geoid][work_block.geoid];}
@@ -1607,7 +1754,7 @@ species landuse {
 	
 	float new_constructions (float far_multiplier, float far_shift, bool add_to_developer_finance <- true) {
 		float far_before <- far;
-		float rent_multiplier <- 2.0;
+		float rent_multiplier <- 3.0;
 		far <- max(0, far*far_multiplier+far_shift);
 		float add_floor_area <- 0.0;
 		float construction_cost <- 0.0;
@@ -1777,17 +1924,21 @@ species building {
 }
 
 experiment gui type: gui {
+	float seed <- 10.0;
 //	float minimum_cycle_duration <- 1#sec;
+	parameter "Incentive Policy" var:incentive_policy category:"Incentive Policy";
 	parameter "Dynamic Incentive Policy" var:dynamic_policy category:"Incentive Policy" disables:[
-		new_construction_grids_string, new_construction_far_string, new_construction_scale, rent_discount_ratio_all,
-		rent_discount_grids_string, rent_discount_ratio_low_inc, rent_discount_ratio_less_commuting, rent_discount_ratio_small_scale
+//		new_construction_grids_string, new_construction_far_string, new_construction_scale, rent_discount_grids_string, 
+		construction_intensity, rent_discount_ratio_all,
+		rent_discount_ratio_low_inc, rent_discount_ratio_less_commuting, rent_discount_ratio_small_scale
 	] enables: [
 		diversity_target, low_inc_pop_ratio_target, commute_distance_target, building_energy_target
 	];
-	parameter "New Construction Grids" var:new_construction_grids_string category:"Incentive Policy";
-	parameter "New Construction FAR" var:new_construction_far_string category:"Incentive Policy";
-	parameter "New Construction Scale" var:new_construction_scale category:"Incentive Policy" among:['Small', 'Large'];
-	parameter "Rent Discount Grids" var:rent_discount_grids_string category:"Incentive Policy";
+//	parameter "New Construction Grids" var:new_construction_grids_string category:"Incentive Policy";
+//	parameter "New Construction FAR" var:new_construction_far_string category:"Incentive Policy";
+//	parameter "New Construction Scale" var:new_construction_scale category:"Incentive Policy" among:['Small', 'Large'];
+	parameter "Construction Intensity" var:construction_intensity category:"Incentive Policy" min:0.0 max:1.0;
+//	parameter "Rent Discount Grids" var:rent_discount_grids_string category:"Incentive Policy";
 	parameter "Rent Discount for All People" var:rent_discount_ratio_all max:1.0 min:0.1 category:"Incentive Policy";
 	parameter "Rent Discount for Low Income People" var:rent_discount_ratio_low_inc max:1.0 min:0.1 category:"Incentive Policy";
 	parameter "Rent Discount for Less Commuting People" var:rent_discount_ratio_less_commuting max:1.0 min:0.1 category:"Incentive Policy";
@@ -1882,17 +2033,22 @@ experiment gui type: gui {
 //				data "Small Scale" value: kendall_occupancy['small'] color:#red;
 //				data "Large Scale" value: kendall_occupancy['large'] color:#blue;
 			}
-			chart "Commute Distance" type:series background: #white position:{0.33,0.33} size:{0.34,0.34} {
-				data "All" value: mean_commute_distance['all'] color:#red;
-				data "Work in Kendall" value: mean_commute_distance['work_in_kendall'] color:#green;
-				data "Live in Kendall" value: mean_commute_distance['live_in_kendall'] color:#blue;
-//				data "Work or Live in Kendall" value: mean_commute_distance['work_or_live_in_kendall'] color:#yellow;
+//			chart "Commute Distance" type:series background: #white position:{0.33,0.33} size:{0.34,0.34} {
+//				data "All" value: mean_commute_distance['all'] color:#red;
+//				data "Work in Kendall" value: mean_commute_distance['work_in_kendall'] color:#green;
+//				data "Live in Kendall" value: mean_commute_distance['live_in_kendall'] color:#blue;
+////				data "Work or Live in Kendall" value: mean_commute_distance['work_or_live_in_kendall'] color:#yellow;
+//			}
+
+			chart "Commute Distance Decrease" type:series background:#white position:{0.33,0.33} size:{0.33,0.34} y_range:{-0.1,0.6}{
+				data "Mean" value:commute_distance_decrease['mean'] color:#red;
 			}
+
 			chart "Population Structure" type:series background: #white position:{0.67,0.33} size:{0.33,0.34}{
 				data "Diversity" value: kendall_diversity color: #red;
 				data "Low Income Proportion" value: kendall_low_inc_ratio color: #blue;
 			}
-			chart "Residence Energy" type:series background: #white position:{0.0,0.67} size:{0.33,0.33}{
+			chart "Residence Energy" type:series background: #white position:{0.0,0.67} size:{0.33,0.33} y_range:{40,60}{
 				data "Eerngy per Kendall Resident" value: residence_energy_per_person color: #red;
 			}
 			chart "Resident Mean Utility" type:series background: #white position:{0.33,0.67} size:{0.34,0.33} {
