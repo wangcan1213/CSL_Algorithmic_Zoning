@@ -32,10 +32,11 @@ global {
 	list<string> nonkendall_geoid_list;
 	blockgroup kendall_virtual_block;
 	float far_discount <- 0.5;    //it seems that current landuse plan provides too many residences
-	list<map> move_stat <- [];
+	list<map> move_stat <- []; 
 	bool consider_nonkendall_resident_capacity <- false;
 	int max_cycle <- 12;
 	developer the_developer;
+	float start_rent_coeff <- 0.95;
 	
 	int lower_nb_represented_persons <- 3;     //mainly used for kendall landuse, and as the unit for a real move
 	int upper_nb_represented_persons <- 120;   //mainly used for outside blockgroup
@@ -53,23 +54,23 @@ global {
 	bool invert_kendall_income <- true;
 	float distance_from_object_block_to_grid_km <- 5.0;
 	// less commuting criteria
-	float min_commute_distance_before_criteria <- 3.0;
+	float min_commute_distance_before_criteria <- 2.5;
 	float min_decrease_ratio_criteria <- 0.3;
 	float min_decrease_distance_criteria <- 0.5;
 
 	
 	// preference parameters
 	float b_move_low_inc <- -1.3;
-	float b_move_low_inc_kendall <- -1.4;
-	float b_commute_distance_low_inc <- -0.01; //-1.28 /-0.88
+	float b_move_low_inc_kendall <- -1.3;
+	float b_commute_distance_low_inc <- -0.005; //-1.28 /-0.88/-0.01
 	float b_large_size_low_inc <- 0.0; //0.24
 	float b_price_low_inc <- -0.003;    //-0.004
 	float b_pop_density_low_inc <- -0.000; //-0.0056
 	float b_inc_disparity_low_inc <- -0.0;  //-0.21
 	
 	float b_move_high_inc <- -1.3;  //-1.29
-	float b_move_high_inc_kendall <- -1.4;
-	float b_commute_distance_high_inc <- -0.01;  //-1.31 /-0.81
+	float b_move_high_inc_kendall <- -1.6;  //-1.4
+	float b_commute_distance_high_inc <- -0.005;  //-1.31 /-0.81/-0.01
 	float b_large_size_high_inc <- 0.0;  //0.52
 	float b_price_high_inc <- -0.0006;    //-0.0012
 	float b_pop_density_high_inc <- -0.0; //-0.0123
@@ -84,7 +85,7 @@ global {
 	float building_energy_target <- 55.0;
 	float diversity_bottom <- 0.62;
 	float low_inc_pop_ratio_bottom <- 0.35;
-	float commute_distance_decrease_bottom <- -0.05;
+	float commute_distance_decrease_bottom <- -0.1;
 	float building_energy_bottom <- 60.0;
 	float max_rent_discount_ratio <- 0.7;
 	string new_construction_grids_string <- 'none';
@@ -96,11 +97,12 @@ global {
 	float rent_discount_ratio_low_inc <- 1.0;
 	float rent_discount_ratio_less_commuting <- 1.0;
 	float rent_discount_ratio_small_scale <- 1.0;
-	float min_finance_to_start_new_construction <- 40000.0;
+	float min_finance_to_start_new_construction <- 0.0; //40000.0
 	float gap_low_inc_pop_ratio <- 0.0;
 	float gap_diversity <- 0.0;
 	float gap_commute_distance <-0.0;
 	float gap_building_energy <- 0.0;
+	list<landuse> incentive_policy_grids <- [];
 
 	// performance indices
 	map<string, float> kendall_occupancy <- ['overall'::0.0 ,'small'::0, 'large'::0];
@@ -274,7 +276,7 @@ global {
 		kendall_virtual_block <- first(kendall_virual_block_list);
 		ask landuse {do update_current_population;}
 		ask blockgroup {do update_current_population;}
-		the_developer.total_rent_at_start <- sum((people where each.live_in_kendall) collect (each.myrent * each.represented_nb_people))*0.9;
+		the_developer.total_rent_at_start <- sum((people where each.live_in_kendall) collect (each.myrent * each.represented_nb_people))*start_rent_coeff;
 		do kendall_statistics;
 	}
 	
@@ -300,14 +302,17 @@ global {
 		}
 		
 		list<people> all_people <- people where (each.represented_nb_people>0 and each.settled_time>=5);
+		ask all_people {less_commuting_if_move_to_kendall <- false;}
 		list<people> people_not_in_kendall_and_has_potential_for_less_commuting;
-		if (incentive_policy=true and dynamic_policy=false and rent_discount_ratio_less_commuting<0.9) or 
-		   (incentive_policy=true and dynamic_policy=true and gap_commute_distance>0.2){
+		if (incentive_policy=true and dynamic_policy=false and rent_discount_ratio_less_commuting<0.96) or 
+		   (incentive_policy=true and dynamic_policy=true and (gap_commute_distance>0.15)){
 			people_not_in_kendall_and_has_potential_for_less_commuting <- people where (
 				each.represented_nb_people>0 and each.settled_time>=5 and each.live_in_kendall=false and
 				each.commute_distance/1000 >= min_commute_distance_before_criteria and
 				each.distance_to_blockgroups_from_my_work_map['250173523001'] < each.commute_distance*(1-min_decrease_ratio_criteria)
 			); 
+			ask people_not_in_kendall_and_has_potential_for_less_commuting {less_commuting_if_move_to_kendall <- true;}
+//			write "total number of less commuting people: " + sum(people_not_in_kendall_and_has_potential_for_less_commuting collect each.represented_nb_people);
 			all_people <- people_not_in_kendall_and_has_potential_for_less_commuting + (
 				all_people - people_not_in_kendall_and_has_potential_for_less_commuting
 			);
@@ -316,13 +321,16 @@ global {
 		ask all_people {
 //			write "commute_distance: "+commute_distance + ", to_kendall: " + distance_to_blockgroups_from_my_work_map['250173523001'];
 //			if ((work_in_kendall=true and flip(0.6)) or flip(ratio_of_people_considering_move_at_each_step)) {
-			if flip(ratio_of_people_considering_move_at_each_step) {
+			float tmp_p <- less_commuting_if_move_to_kendall ? 
+				(ratio_of_people_considering_move_at_each_step/(rent_discount_ratio_less_commuting)^3) : ratio_of_people_considering_move_at_each_step;
+			if flip(tmp_p) {
 //			if flip(1) {
 				do select_residence;
 				do update_landuse_and_blockgroup_population_info (true, true);
 			}
 		}
-//		write 'people over, vacant house=' + kendall_virtual_block.crt_nb_available_bedrooms;
+//		write "Structure of move-in people in terms of rent type: ";
+//		do move_in_type_statistics;
 		ask landuse {
 			do update_current_population;
 			if usage='R' {do update_attached_resident_rent;}
@@ -674,6 +682,21 @@ global {
 		residence_energy_per_person <-  residence_energy_per_m2 * (total_occupied_area_small_scale + total_occupied_area_large_scale) / kendall_virtual_block.crt_total_pop;
 	}
 	
+	map<string, int> move_in_type_statistics (int max_settled_time<-0, bool printFlag<-true) {
+		map<string,int> results;
+		list<people> move_in_people <- people where (each.live_in_kendall and each.represented_nb_people>0 and each.settled_time<=max_settled_time);
+		loop this_rent_type over: ['low_income', 'less_commuting', 'low_income_and_less_commuting', 'all_others'] {
+			results[this_rent_type] <- sum((move_in_people where (each.my_rent_type=this_rent_type)) collect each.represented_nb_people);
+		}
+		if sum(move_in_people collect each.represented_nb_people) > sum(results.values) {
+			results['error'] <- sum(move_in_people collect each.represented_nb_people) - sum(results.values);
+		}
+		if printFlag {
+			write results;
+		}
+		return results;
+	}
+	
 	action apply_static_incentive_policy {
 //		list<landuse> rent_discount_grids <- 5 among (landuse where (each.usage='R'));
 		list<landuse> rent_discount_grids <- 6 among (landuse where (each.usage='vacant'));
@@ -693,7 +716,9 @@ global {
 		}
 		
 		//anyway, do it first
-		float new_construction_far_shift_max <- 1.2;
+//		float new_construction_far_shift_max <- 1.2;
+		float total_rent_discount_ratio <- rent_discount_ratio_low_inc * rent_discount_ratio_small_scale * rent_discount_ratio_less_commuting;
+		float new_construction_far_shift_max <- new_construction_far_given_incentive_policy(total_rent_discount_ratio);
 		float new_construction_far_shift <- new_construction_far_shift_max * construction_intensity;
 		ask new_construction_grids {
 			do new_constructions(1.0, new_construction_far_shift);
@@ -793,6 +818,7 @@ global {
 		}
 		// gap calculation
 		gap_low_inc_pop_ratio <- normalized_gap(kendall_low_inc_ratio, low_inc_pop_ratio_target, low_inc_pop_ratio_bottom);
+		write "fuck: " + kendall_low_inc_ratio + ', target = ' + low_inc_pop_ratio_target + ', bottom = ' + low_inc_pop_ratio_bottom;
 		gap_diversity <- normalized_gap(kendall_diversity, diversity_target, diversity_bottom);
 		gap_commute_distance <- normalized_gap(
 			commute_distance_decrease['mean'], commute_distance_decrease_target, commute_distance_decrease_bottom
@@ -810,6 +836,9 @@ global {
 		int min_target_low_income_po <- min(target_low_income_pop_in_all_grids);
 		int max_target_less_commuting_pop <- max(target_less_commuting_pop_in_all_grids);
 		int min_target_less_commuting_pop <- min(target_less_commuting_pop_in_all_grids);
+//		write "potential calculation\nrent_type_weights = " + ['low_income'::max(gap_low_inc_pop_ratio, gap_diversity), 'less_commuting'::gap_commute_distance];
+//		write "low income: max target = " + max_target_low_income_pop + ', min target = ' + min_target_low_income_po;
+//		write "less commuting: max target = " + max_target_less_commuting_pop + ', min target = ' + min_target_less_commuting_pop;
 		ask landuse where (each.usage in ['R', 'vacant']) {
 			do potential_calc(
 				['low_income'::max(gap_low_inc_pop_ratio, gap_diversity), 'less_commuting'::gap_commute_distance],
@@ -831,20 +860,34 @@ global {
 		if gap_building_energy >= 0.7 {
 			nb_small_scale_for_new_construction <- 6;
 		} else if gap_building_energy >= 0.4 {
-			nb_small_scale_for_new_construction <- 4;
+			nb_small_scale_for_new_construction <- 6;
 		} else if gap_building_energy >= 0.2 {
-			nb_small_scale_for_new_construction <- 2;
+			nb_small_scale_for_new_construction <- 4;
 		} else if gap_building_energy >= 0 {
-			nb_small_scale_for_new_construction <- 1;
+			nb_small_scale_for_new_construction <- 2;
 		} else {
-			nb_small_scale_for_new_construction <- 0;
+			nb_small_scale_for_new_construction <- 1;
 		}
+		
+		rent_discount_ratio_less_commuting <- 1 - max_rent_discount_ratio * gap_commute_distance;
+		rent_discount_ratio_low_inc <- 1 - max_rent_discount_ratio * max(gap_low_inc_pop_ratio, gap_diversity);
+		rent_discount_ratio_small_scale <- 1 - max_rent_discount_ratio * gap_building_energy;
+		float total_rent_discount_ratio <- rent_discount_ratio_low_inc * rent_discount_ratio_small_scale * rent_discount_ratio_less_commuting;
+//		float new_construction_far_shift_max <- new_construction_far_given_incentive_policy(total_rent_discount_ratio);
+//		if total_rent_discount_ratio <= 0.4 {
+//			float scale_tmp <- (0.4 / (rent_discount_ratio_less_commuting*rent_discount_ratio_low_inc*rent_discount_ratio_small_scale)) ^ (1/3);
+//			rent_discount_ratio_less_commuting <- rent_discount_ratio_less_commuting * scale_tmp;
+//			rent_discount_ratio_low_inc <- rent_discount_ratio_low_inc * scale_tmp;
+//			rent_discount_ratio_small_scale <- rent_discount_ratio_small_scale * scale_tmp;
+//		}
+		
+		
 		if the_developer.finance > min_finance_to_start_new_construction and kendall_occupancy['overall']>0.95 {
 			ask grids_with_top6_potential {
-				do new_constructions(1.0, 0.8);
+				do new_constructions(1.0, 1.1);
 				if usage='vacant' {
 					do change_landuse('R', 'L');
-					rent_base <- 1200.0;
+					rent_base <- 1100.0;
 				}
 			}
 			ask nb_small_scale_for_new_construction among grids_with_top6_potential {
@@ -871,18 +914,18 @@ global {
 //			}
 //		}
 		ask grids_with_top6_potential {
-			do set_rent_policy (['low_income':: 1 - max_rent_discount_ratio * max(gap_low_inc_pop_ratio, gap_diversity),
-				 'small_scale':: 1 - max_rent_discount_ratio * gap_building_energy, 
-				 'less_commuting':: 1 - max_rent_discount_ratio * gap_commute_distance]
+			do set_rent_policy (['low_income':: rent_discount_ratio_low_inc,
+				 'small_scale':: rent_discount_ratio_small_scale, 
+				 'less_commuting':: rent_discount_ratio_less_commuting]
 			); 
 		}
 		
 		write "\n=======================================";
 		write "Rent Discount Policy on the following grids: ";
 		write grids_with_top6_potential;
-		write "Rent Discount for Low Income People: " + (1 - max_rent_discount_ratio * max(gap_low_inc_pop_ratio, gap_diversity));
-		write "Rent Discount for Small Scale ResidenceL: " + (1 - max_rent_discount_ratio * gap_building_energy);
-		write "Rent Discount for Less Commuting People: " + (1 - max_rent_discount_ratio * gap_commute_distance);
+		write "Rent Discount for Low Income People: " + rent_discount_ratio_low_inc;
+		write "Rent Discount for Small Scale Residence: " + rent_discount_ratio_small_scale;
+		write "Rent Discount for Less Commuting People: " + rent_discount_ratio_less_commuting;
 		write "=======================================\n";
 	}
 	
@@ -895,6 +938,21 @@ global {
 			normalized_value <- (bottom_value - crt_value) / (bottom_value - target_value);
 		}
 		return 1 - max(min(normalized_value, 1), 0);
+	}
+	
+	float new_construction_far_given_incentive_policy (float total_rent_discount_ratio) {
+		float far_shift <- 0.0;
+		float far_shift_allowed <- min(5 * (1 - total_rent_discount_ratio), 1.1);
+		float max_debt <- 4000000.0;
+		float rent_base_tmp <- 1300.0;
+//		float expected_occupancy <- kendall_occupancy['overall'];
+		float expected_occupancy <- 1.0;
+		float construction_fee_multiplier <- 6.0;
+		float constrution_cost_tmp <- construction_fee_multiplier * 240;
+		float new_construction_area_accepted <- max_debt / (constrution_cost_tmp - rent_base_tmp/45*3*16 * expected_occupancy * total_rent_discount_ratio);
+		float far_shift_accepted <- new_construction_area_accepted / 6400;
+		far_shift <- min(far_shift_allowed, far_shift_accepted);
+		return far_shift;
 	}
 	
 	action create_blockgroup_dist_matrix {
@@ -1019,11 +1077,22 @@ species developer {
 		float subsidy_this_cycle <- sum((people where each.live_in_kendall) collect ((each.home_grid.rent_base - each.myrent) * each.represented_nb_people));
 		subsidy_this_cycle <- subsidy_this_cycle * 3;
 		addtional_rent_this_cycle <- addtional_rent_this_cycle * 3;
+		if incentive_policy {
+//			subsidy_this_cycle <- addtional_rent_this_cycle * 0.9 * (1 - rent_discount_ratio_low_inc*rent_discount_ratio_less_commuting*rent_discount_ratio_small_scale);
+			subsidy_this_cycle <- subsidy_this_cycle * 1.75;
+		}
+//		write "subsidies = " + subsidy_this_cycle;
+//		write "additional rents = " + addtional_rent_this_cycle;
 		subsidy_total <- subsidy_total + subsidy_this_cycle;
 		expenditure_total <- expenditure_total + subsidy_this_cycle;
 		revene_detail[cycle]['rent'] <- addtional_rent_this_cycle;
 		revene_total <- revene_total + addtional_rent_this_cycle;
 		finance <- finance + addtional_rent_this_cycle - subsidy_this_cycle;
+	}
+	
+	action collect_additional_rent_and_pay_subsidy_new {
+		list<people> people_to_collect_rent;
+//		float rent_this_cycle <- sum(people_to_collect_rent collect (each.represented_nb_people) * each.home_grid.rent_base);
 	}
 	
 	action potential_eval {
@@ -1205,6 +1274,7 @@ species people schedules: shuffle(people){
 	float utility <- 999.0;  //only apply to those who live in kendall, here 999 will be viewed as nan;
 	float myrent;
 	string my_rent_type <- '';   //only apply to those live in kendall: all_others / low_income / less_commuting / low_income_and_less_commuting
+	bool less_commuting_if_move_to_kendall <-false;
 	init {
 		if income=0 {
 			b_move <- b_move_low_inc;
@@ -1313,6 +1383,10 @@ species people schedules: shuffle(people){
 			v_grids <- list(tmp_x_grids.b_mat);
 			float max_v_grid <- max(v_grids);
 			v[1] <- max_v_grid;
+			// for debug:
+			int idx_argmax_v_grid <- v_grids index_of max_v_grid;
+			rent_in_these_blocks[1] <- rent_in_these_grids[idx_argmax_v_grid];
+			commute_dist_to_these_blocks[1] <- commute_dist_to_these_grids[idx_argmax_v_grid];
 		}
 		
 		list<float> p;
@@ -1340,9 +1414,15 @@ species people schedules: shuffle(people){
 //			write p;
 //			write '-----------------\n';
 //		}
+
 //		if kendall_in_choice_set {
-//			write p;
-//			write round(represented_nb_people * p[1]);
+//			write alternative_geoid_list;
+//			write "rent = " + rent_in_these_blocks;
+//			write "distance = " + commute_dist_to_these_blocks;
+//			write "p = "+p;
+//			write "Currnet cd = " + commute_distance + ', cd if move to kendall = ' + distance_to_blockgroups_from_my_work_map['250173523001'];
+//			write "\n";
+////			write round(represented_nb_people * p[1]);
 //		}
 			
 		loop idx from:0 to:length(p)-1 {
@@ -1955,7 +2035,7 @@ species landuse {
 	}
 	
 	action update_attached_resident_rent {
-		ask attached_residents {
+		ask attached_residents where (each.settled_time<=1) {
 			myrent <- myself.rent_subgroups[my_rent_type];
 		}
 	}
@@ -2006,8 +2086,8 @@ species landuse {
 		if usage='O' {
 			crt_potential <- -1000.0;
 		} else {
+			crt_potential <- 0.0;
 			loop this_rent_type over:rent_type_weights.keys {
-				crt_potential <- 0;
 				if this_rent_type = 'low_income' and rent_type_weights[this_rent_type] > 0 {
 					crt_potential <- crt_potential + rent_type_weights['low_income'] * (target_subgroups['low_income']-min_target_low_income_pop) / (max_target_low_income_pop-min_target_low_income_pop);
 				}
@@ -2048,13 +2128,13 @@ experiment gui type: gui {
 //	parameter "New Construction Scale" var:new_construction_scale category:"Incentive Policy" among:['Small', 'Large'];
 	parameter "Construction Intensity" var:construction_intensity category:"Incentive Policy" min:0.0 max:1.0;
 //	parameter "Rent Discount Grids" var:rent_discount_grids_string category:"Incentive Policy";
-	parameter "Rent Discount for All People" var:rent_discount_ratio_all max:1.0 min:0.1 category:"Incentive Policy";
-	parameter "Rent Discount for Low Income People" var:rent_discount_ratio_low_inc max:1.0 min:0.1 category:"Incentive Policy";
-	parameter "Rent Discount for Less Commuting People" var:rent_discount_ratio_less_commuting max:1.0 min:0.1 category:"Incentive Policy";
-	parameter "Rent Discount for Small Scale Residences" var:rent_discount_ratio_small_scale max:1.0 min:0.1 category:"Incentive Policy";
-	parameter "Diversity Target" var:diversity_target max:0.7 min:0.2 category:"Incentive Policy" ;
-	parameter "Affordability Target" var:low_inc_pop_ratio_target max:0.7 min:0.1 category:"Incentive Policy";
-	parameter "Commuting Distance Target" var:commute_distance_decrease_target max:0.7 min:-0.05 category:"Incentive Policy";
+//	parameter "Rent Discount for All People" var:rent_discount_ratio_all max:1.0 min:0.1 category:"Incentive Policy";
+	parameter "Rent Discount for Low Income People" var:rent_discount_ratio_low_inc max:1.0 min:0.5 category:"Incentive Policy";
+	parameter "Rent Discount for Less Commuting People" var:rent_discount_ratio_less_commuting max:1.0 min:0.5 category:"Incentive Policy";
+	parameter "Rent Discount for Small Scale Residences" var:rent_discount_ratio_small_scale max:1.0 min:0.5 category:"Incentive Policy";
+	parameter "Diversity Target" var:diversity_target max:0.7 min:0.62 category:"Incentive Policy" ;
+	parameter "Affordability Target" var:low_inc_pop_ratio_target max:0.65 min:0.35 category:"Incentive Policy";
+	parameter "Commuting Distance Target" var:commute_distance_decrease_target max:0.6 min:-0.05 category:"Incentive Policy";
 	parameter "Building Energy Target" var:building_energy_target max:60.0 min:50.0 category:"Incentive Policy";
 //	parameter "Diversity Weight" var:diversity_weight category:"Incentive Policy" ;
 //	parameter "Affordability Weight" var:low_inc_pop_ratio_weight category:"Incentive Policy";
@@ -2162,7 +2242,7 @@ experiment gui type: gui {
 //				data "Low Income Proportion" value: kendall_low_inc_ratio color: #blue;
 //			}
 			
-			chart "Affordability" type:series background: #white position:{0.0,0.67} size:{0.33,0.33} y_range:{0.3,0.75}{
+			chart "Affordability" type:series background: #white position:{0.0,0.67} size:{0.33,0.33} y_range:{0.3,0.65}{
 				data "Low Income Proportion" value: kendall_low_inc_ratio color: #red;
 			}
 			
