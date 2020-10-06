@@ -104,6 +104,7 @@ global {
 	float gap_building_energy <- 0.0;
 	list<landuse> incentive_policy_grids <- [];
 	int crt_nb_available_bedrooms_for_less_commuting_discount <- 0;
+	list<people> people_with_discounted_rent <- [];
 
 	// performance indices
 	map<string, float> kendall_occupancy <- ['overall'::0.0 ,'small'::0, 'large'::0];
@@ -322,9 +323,9 @@ global {
 		ask all_people {
 //			write "commute_distance: "+commute_distance + ", to_kendall: " + distance_to_blockgroups_from_my_work_map['250173523001'];
 //			if ((work_in_kendall=true and flip(0.6)) or flip(ratio_of_people_considering_move_at_each_step)) {
-			float tmp_p <- less_commuting_if_move_to_kendall ? 
+			float p_to_be_chosen_for_potential_move <- less_commuting_if_move_to_kendall ? 
 				(ratio_of_people_considering_move_at_each_step/(rent_discount_ratio_less_commuting)^3) : ratio_of_people_considering_move_at_each_step;
-			if flip(tmp_p) {
+			if flip(p_to_be_chosen_for_potential_move) {
 //			if flip(1) {
 				do select_residence;
 				do update_landuse_and_blockgroup_population_info (true, true);
@@ -419,7 +420,42 @@ global {
 //		write nb_nonkendall_blocks_in_hom_loc_choice/length(nonkendall_geoid_list+1);
 //		write kendall_virtual_block.crt_total_pop;
 //		write "kendall_diversity: "+kendall_diversity+", kendall_low_inc_ratio: "+kendall_low_inc_ratio;
-		write "crt_nb_available_bedrooms_for_less_commuting_discount = " + crt_nb_available_bedrooms_for_less_commuting_discount;
+//		write "crt_nb_available_bedrooms_for_less_commuting_discount = " + crt_nb_available_bedrooms_for_less_commuting_discount;
+		/* 
+		// to check out why the number of people enjoy discounted rent may decrease
+		// problem solved: when update myrent with grid rent_subgroups, only update those just move (settled_time=0)
+		list<people> crt_people_with_discounted_rent <- [];
+		list<people> crt_people_who_no_longer_take_discounted_rent <- [];
+		int nb_people_with_discounted_rent;
+		ask people where (each.live_in_kendall and each.represented_nb_people>0) {
+			if myrent < home_grid.rent_base {
+				nb_people_with_discounted_rent <- nb_people_with_discounted_rent + represented_nb_people;
+				if !(self in people_with_discounted_rent) {people_with_discounted_rent << self;}
+				crt_people_with_discounted_rent << self;
+			}
+		}
+		loop this_person over: people_with_discounted_rent {
+			if !(this_person in crt_people_with_discounted_rent) {crt_people_who_no_longer_take_discounted_rent << this_person;}
+		}
+		write "all!!";
+		ask people_with_discounted_rent {
+			write "name = " + name + ", my_rent = "+round(myrent) + ", grid_rent_base = " + home_grid.rent_base + ", grid = " + home_grid +", live_in_kendall = "+live_in_kendall + ", settled_time = "+ settled_time + ", nb_people = " + represented_nb_people;
+		}
+		write "\nStrange: !";
+		ask crt_people_who_no_longer_take_discounted_rent {
+			write "name = " + name + ", my_rent = "+round(myrent) + ", grid_rent_base = " + home_grid.rent_base + ", grid = " + home_grid  + ", live_in_kendall = "+live_in_kendall + ", settled_time = "+ settled_time + ", nb_people = " + represented_nb_people;
+		}
+	    */
+//		int nb_people_with_discounted_rent;
+//		ask people where (each.live_in_kendall and each.represented_nb_people>0) {
+//			if myrent < home_grid.rent_base {
+//				nb_people_with_discounted_rent <- nb_people_with_discounted_rent + represented_nb_people;
+//			}
+//		}
+//		write "nb_people_with_discounted_rent = " + nb_people_with_discounted_rent;
+		write "crt subsidy = " + the_developer.subsidy_this_cycle;
+		if the_developer.subsidy_this_cycle <0 {do pause;}
+		
 	}
 	
 	action load_worker_data {
@@ -843,8 +879,8 @@ global {
 		int max_target_less_commuting_pop <- max(target_less_commuting_pop_in_all_grids);
 		int min_target_less_commuting_pop <- min(target_less_commuting_pop_in_all_grids);
 //		write "potential calculation\nrent_type_weights = " + ['low_income'::max(gap_low_inc_pop_ratio, gap_diversity), 'less_commuting'::gap_commute_distance];
-		write "low income: max target = " + max_target_low_income_pop + ', min target = ' + min_target_low_income_po;
-		write "less commuting: max target = " + max_target_less_commuting_pop + ', min target = ' + min_target_less_commuting_pop;
+//		write "low income: max target = " + max_target_low_income_pop + ', min target = ' + min_target_low_income_po;
+//		write "less commuting: max target = " + max_target_less_commuting_pop + ', min target = ' + min_target_less_commuting_pop;
 		ask landuse where (each.usage in ['R', 'vacant']) {
 			do potential_calc(
 				['low_income'::max(gap_low_inc_pop_ratio, gap_diversity), 'less_commuting'::gap_commute_distance],
@@ -852,9 +888,9 @@ global {
 			);
 		}
 		
-		ask landuse where (each.usage in ['R', 'vacant']) {
-			write 'name = '+name + ', potential = ' + crt_potential + ', target = ' + target_subgroups;
-		}
+//		ask landuse where (each.usage in ['R', 'vacant']) {
+//			write 'name = '+name + ', potential = ' + crt_potential + ', target = ' + target_subgroups;
+//		}
 		list<landuse> grids_sorted_by_potential <- (landuse where (each.usage in ['R', 'vacant'])) sort_by (-each.crt_potential);
 		list<landuse> grids_with_top6_potential;
 		if grids_sorted_by_potential[0].crt_potential = 0 {
@@ -1080,6 +1116,7 @@ species developer {
 	float revene_total <- 0.0;
 	float expenditure_total <- 0.0;
 	float subsidy_total <- 0.0;
+	float subsidy_this_cycle <- 0.0;
 	float total_rent_at_start <- 0.0;
 	map<int, map<string, float>> revene_detail <- map([]);
 	map<int, map<string, float>> expenditure_detail <- map([]);
@@ -1093,15 +1130,22 @@ species developer {
 //		float rent_in_this_cycle <- sum((people where each.live_in_kendall) collect (each.represented_nb_people * each.myrent));
 		float total_rent_base_this_cycle <- sum((landuse where (each.usage='R')) collect (each.rent_base * each.crt_total_pop));
 		float addtional_rent_this_cycle <- (total_rent_base_this_cycle - total_rent_at_start);
-		float subsidy_this_cycle <- sum((people where each.live_in_kendall) collect ((each.home_grid.rent_base - each.myrent) * each.represented_nb_people));
+		subsidy_this_cycle <- sum((people where each.live_in_kendall) collect ((each.home_grid.rent_base - each.myrent) * each.represented_nb_people));
 		subsidy_this_cycle <- subsidy_this_cycle * 3;
 		addtional_rent_this_cycle <- addtional_rent_this_cycle * 3;
 		if incentive_policy {
 //			subsidy_this_cycle <- addtional_rent_this_cycle * 0.9 * (1 - rent_discount_ratio_low_inc*rent_discount_ratio_less_commuting*rent_discount_ratio_small_scale);
 			subsidy_this_cycle <- subsidy_this_cycle * 1.75;
 		}
+//		//debug developer
+//		write "subsidy_this_cycle = " + subsidy_this_cycle;
+//		int nb_people_with_discounted_rent <- sum((people where (each.live_in_kendall and (each.home_grid.rent_base - each.myrent>0))) collect each.represented_nb_people);
+//		write "nb_people_with_discounted_rent = " +nb_people_with_discounted_rent;
 //		write "subsidies = " + subsidy_this_cycle;
 //		write "additional rents = " + addtional_rent_this_cycle;
+		if subsidy_this_cycle < 0 {
+			write "strange !!!Negative subsidy!!!\nsubsidy_this_cycle = " + subsidy_this_cycle;
+		}
 		subsidy_total <- subsidy_total + subsidy_this_cycle;
 		expenditure_total <- expenditure_total + subsidy_this_cycle;
 		revene_detail[cycle]['rent'] <- addtional_rent_this_cycle;
@@ -1112,10 +1156,6 @@ species developer {
 	action collect_additional_rent_and_pay_subsidy_new {
 		list<people> people_to_collect_rent;
 //		float rent_this_cycle <- sum(people_to_collect_rent collect (each.represented_nb_people) * each.home_grid.rent_base);
-	}
-	
-	action potential_eval {
-		
 	}
 }
 
@@ -1318,6 +1358,7 @@ species people schedules: shuffle(people){
 		// adjust preference parameters for kendall residents
 		if income = 0 {b_move <- live_in_kendall ? b_move_low_inc_kendall : b_move_low_inc;} 
 		else {b_move <- live_in_kendall ? b_move_high_inc_kendall : b_move_high_inc;}
+		if live_in_kendall and myrent < home_grid.rent_base {b_move <- -1000.0;}
 		b_mat[0] <- b_move;
 		list<string> alternative_geoid_list <- [home_block.geoid]; //current blockgroup will always be in the choice set
 		bool kendall_in_choice_set <- false;
@@ -1484,6 +1525,7 @@ species people schedules: shuffle(people){
 					if length(people_list_in_destination_grid_with_same_attribute) > 0 {
 						ask first(people_list_in_destination_grid_with_same_attribute) {
 							represented_nb_people <- represented_nb_people + nb_people_to_move_to_this_grid;
+							settled_time <- 0;
 						}
 						move_stat << map(['from'::home_loc, 'to'::first(people_list_in_destination_grid_with_same_attribute).home_loc, 
 							'pop'::nb_people_to_move_to_this_grid, 'work_in_kendall'::work_in_kendall, 'live_in_kendall'::true]);
@@ -2054,7 +2096,9 @@ species landuse {
 	}
 	
 	action update_attached_resident_rent {
-		ask attached_residents where (each.settled_time<=1) {
+		ask attached_residents where (each.settled_time=0) { 
+		// it's important to only update those settled_time=0, or saying just move, so that even though grids to apply incentive policy change, 
+		// the attched residents will still enjoy the disocunted rent, unless they move out.
 			myrent <- myself.rent_subgroups[my_rent_type];
 		}
 	}
