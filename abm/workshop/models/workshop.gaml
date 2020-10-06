@@ -103,6 +103,7 @@ global {
 	float gap_commute_distance <-0.0;
 	float gap_building_energy <- 0.0;
 	list<landuse> incentive_policy_grids <- [];
+	int crt_nb_available_bedrooms_for_less_commuting_discount <- 0;
 
 	// performance indices
 	map<string, float> kendall_occupancy <- ['overall'::0.0 ,'small'::0, 'large'::0];
@@ -304,7 +305,7 @@ global {
 		list<people> all_people <- people where (each.represented_nb_people>0 and each.settled_time>=5);
 		ask all_people {less_commuting_if_move_to_kendall <- false;}
 		list<people> people_not_in_kendall_and_has_potential_for_less_commuting;
-		if (incentive_policy=true and dynamic_policy=false and rent_discount_ratio_less_commuting<0.96) or 
+		if (incentive_policy=true and dynamic_policy=false and rent_discount_ratio_less_commuting<0.96 and crt_nb_available_bedrooms_for_less_commuting_discount>0) or 
 		   (incentive_policy=true and dynamic_policy=true and (gap_commute_distance>0.15)){
 			people_not_in_kendall_and_has_potential_for_less_commuting <- people where (
 				each.represented_nb_people>0 and each.settled_time>=5 and each.live_in_kendall=false and
@@ -418,6 +419,7 @@ global {
 //		write nb_nonkendall_blocks_in_hom_loc_choice/length(nonkendall_geoid_list+1);
 //		write kendall_virtual_block.crt_total_pop;
 //		write "kendall_diversity: "+kendall_diversity+", kendall_low_inc_ratio: "+kendall_low_inc_ratio;
+		write "crt_nb_available_bedrooms_for_less_commuting_discount = " + crt_nb_available_bedrooms_for_less_commuting_discount;
 	}
 	
 	action load_worker_data {
@@ -653,6 +655,7 @@ global {
 		));
 		float mean_commute_distance_decrease <- total_commute_distance_decrease / sum((people where each.live_in_kendall) collect each.represented_nb_people);
 		commute_distance_decrease <- ['total'::total_commute_distance_decrease, 'mean'::mean_commute_distance_decrease];
+		crt_nb_available_bedrooms_for_less_commuting_discount <- sum((landuse where (each.usage='R' and each.rent_discount_ratio['less_commuting']<1)) collect each.crt_nb_available_bedrooms);
 			
 		move_max_value_record_list << max(move_to_kendall_pop.values + move_out_of_kendall_pop);  
 //		move_max_value_record_list <- [1,2,3,4,5,6,7,8] collect move_max_value_record_list[max(length(move_max_value_record_list)-each, 0)];  //keep only the last 3 elements
@@ -720,10 +723,13 @@ global {
 		float total_rent_discount_ratio <- rent_discount_ratio_low_inc * rent_discount_ratio_small_scale * rent_discount_ratio_less_commuting;
 		float new_construction_far_shift_max <- new_construction_far_given_incentive_policy(total_rent_discount_ratio);
 		float new_construction_far_shift <- new_construction_far_shift_max * construction_intensity;
-		ask new_construction_grids {
-			do new_constructions(1.0, new_construction_far_shift);
-//			do change_landuse('R', 'S');
+		if new_construction_far_shift > 0 {
+			ask new_construction_grids {
+				do new_constructions(1.0, new_construction_far_shift);
+	//			do change_landuse('R', 'S');
+			}
 		}
+		
 		int nb_small_scale_for_new_construction <- 0;
 		if rent_discount_ratio_small_scale <= 0.5 {
 			nb_small_scale_for_new_construction <- 6;
@@ -818,7 +824,7 @@ global {
 		}
 		// gap calculation
 		gap_low_inc_pop_ratio <- normalized_gap(kendall_low_inc_ratio, low_inc_pop_ratio_target, low_inc_pop_ratio_bottom);
-		write "fuck: " + kendall_low_inc_ratio + ', target = ' + low_inc_pop_ratio_target + ', bottom = ' + low_inc_pop_ratio_bottom;
+//		write "Low income ratio: current = " + kendall_low_inc_ratio + ', target = ' + low_inc_pop_ratio_target + ', bottom = ' + low_inc_pop_ratio_bottom;
 		gap_diversity <- normalized_gap(kendall_diversity, diversity_target, diversity_bottom);
 		gap_commute_distance <- normalized_gap(
 			commute_distance_decrease['mean'], commute_distance_decrease_target, commute_distance_decrease_bottom
@@ -837,8 +843,8 @@ global {
 		int max_target_less_commuting_pop <- max(target_less_commuting_pop_in_all_grids);
 		int min_target_less_commuting_pop <- min(target_less_commuting_pop_in_all_grids);
 //		write "potential calculation\nrent_type_weights = " + ['low_income'::max(gap_low_inc_pop_ratio, gap_diversity), 'less_commuting'::gap_commute_distance];
-//		write "low income: max target = " + max_target_low_income_pop + ', min target = ' + min_target_low_income_po;
-//		write "less commuting: max target = " + max_target_less_commuting_pop + ', min target = ' + min_target_less_commuting_pop;
+		write "low income: max target = " + max_target_low_income_pop + ', min target = ' + min_target_low_income_po;
+		write "less commuting: max target = " + max_target_less_commuting_pop + ', min target = ' + min_target_less_commuting_pop;
 		ask landuse where (each.usage in ['R', 'vacant']) {
 			do potential_calc(
 				['low_income'::max(gap_low_inc_pop_ratio, gap_diversity), 'less_commuting'::gap_commute_distance],
@@ -846,11 +852,16 @@ global {
 			);
 		}
 		
-//		ask landuse where (each.usage in ['R', 'vacant']) {
-//			write 'name = '+name + ', potential = ' + crt_potential + ', target = ' + target_subgroups;
-//		}
+		ask landuse where (each.usage in ['R', 'vacant']) {
+			write 'name = '+name + ', potential = ' + crt_potential + ', target = ' + target_subgroups;
+		}
 		list<landuse> grids_sorted_by_potential <- (landuse where (each.usage in ['R', 'vacant'])) sort_by (-each.crt_potential);
-		list<landuse> grids_with_top6_potential <- [0,1,2,3,4,5] collect grids_sorted_by_potential[each];
+		list<landuse> grids_with_top6_potential;
+		if grids_sorted_by_potential[0].crt_potential = 0 {
+			grids_with_top6_potential <- 6 among grids_sorted_by_potential;
+		} else {
+			grids_with_top6_potential <- [0,1,2,3,4,5] collect grids_sorted_by_potential[each];
+		}
 //		list<landuse> grids_sorted_by_target_less_commuting_pop <- (landuse where (each.usage in ['R', 'vacant'])) sort_by (-each.target_subgroups['less_commuting']);
 //		list<landuse> grids_with_top6_target_less_commuting_pop <- [0,1,2,3,4,5,6] collect  grids_sorted_by_target_less_commuting_pop[each];
 //		list<landuse> grids_sorted_by_low_inc_pop <- (landuse where (each.usage in ['R', 'vacant'])) sort_by (-each.target_subgroups['low_income']);
@@ -873,16 +884,16 @@ global {
 		rent_discount_ratio_low_inc <- 1 - max_rent_discount_ratio * max(gap_low_inc_pop_ratio, gap_diversity);
 		rent_discount_ratio_small_scale <- 1 - max_rent_discount_ratio * gap_building_energy;
 		float total_rent_discount_ratio <- rent_discount_ratio_low_inc * rent_discount_ratio_small_scale * rent_discount_ratio_less_commuting;
-//		float new_construction_far_shift_max <- new_construction_far_given_incentive_policy(total_rent_discount_ratio);
-//		if total_rent_discount_ratio <= 0.4 {
-//			float scale_tmp <- (0.4 / (rent_discount_ratio_less_commuting*rent_discount_ratio_low_inc*rent_discount_ratio_small_scale)) ^ (1/3);
-//			rent_discount_ratio_less_commuting <- rent_discount_ratio_less_commuting * scale_tmp;
-//			rent_discount_ratio_low_inc <- rent_discount_ratio_low_inc * scale_tmp;
-//			rent_discount_ratio_small_scale <- rent_discount_ratio_small_scale * scale_tmp;
-//		}
+		float new_construction_far_shift_max <- new_construction_far_given_incentive_policy(total_rent_discount_ratio);
+		if total_rent_discount_ratio <= 0.4 {
+			float scale_tmp <- (0.4 / (rent_discount_ratio_less_commuting*rent_discount_ratio_low_inc*rent_discount_ratio_small_scale)) ^ (1/3);
+			rent_discount_ratio_less_commuting <- min(1.0, rent_discount_ratio_less_commuting * scale_tmp);
+			rent_discount_ratio_low_inc <- min(1.0, rent_discount_ratio_low_inc * scale_tmp);
+			rent_discount_ratio_small_scale <- min(1.0, rent_discount_ratio_small_scale * scale_tmp);
+		}
 		
 		
-		if the_developer.finance > min_finance_to_start_new_construction and kendall_occupancy['overall']>0.95 {
+		if the_developer.finance > min_finance_to_start_new_construction and kendall_occupancy['overall']>0.90 {
 			ask grids_with_top6_potential {
 				do new_constructions(1.0, 1.1);
 				if usage='vacant' {
@@ -940,7 +951,7 @@ global {
 		return 1 - max(min(normalized_value, 1), 0);
 	}
 	
-	float new_construction_far_given_incentive_policy (float total_rent_discount_ratio) {
+	float new_construction_far_given_incentive_policy_before (float total_rent_discount_ratio) {
 		float far_shift <- 0.0;
 		float far_shift_allowed <- min(5 * (1 - total_rent_discount_ratio), 1.1);
 		float max_debt <- 4000000.0;
@@ -951,6 +962,14 @@ global {
 		float constrution_cost_tmp <- construction_fee_multiplier * 240;
 		float new_construction_area_accepted <- max_debt / (constrution_cost_tmp - rent_base_tmp/45*3*16 * expected_occupancy * total_rent_discount_ratio);
 		float far_shift_accepted <- new_construction_area_accepted / 6400;
+		far_shift <- min(far_shift_allowed, far_shift_accepted);
+		return far_shift;
+	}
+	
+	float new_construction_far_given_incentive_policy (float total_rent_discount_ratio) {
+		float far_shift <- 0.0;
+		float far_shift_allowed <- min(5 * (1 - total_rent_discount_ratio), 1.1);
+		float far_shift_accepted <- total_rent_discount_ratio > 0.4 ? 1.1 : 2*total_rent_discount_ratio; 
 		far_shift <- min(far_shift_allowed, far_shift_accepted);
 		return far_shift;
 	}
