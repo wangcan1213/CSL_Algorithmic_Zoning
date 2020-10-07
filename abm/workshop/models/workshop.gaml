@@ -324,7 +324,7 @@ global {
 		// init agent data
 		name_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.name;
 		work_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
-		home_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
+		home_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.home_loc CRS_transform("EPSG:4326"));
 		population_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.represented_nb_people;
 		income_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.income;
 	}
@@ -403,7 +403,7 @@ global {
 		// update agent data
 		name_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.name;
 		work_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
-		home_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
+		home_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.home_loc CRS_transform("EPSG:4326"));
 		population_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.represented_nb_people;
 		income_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.income;
 	}
