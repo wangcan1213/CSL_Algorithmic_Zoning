@@ -168,6 +168,13 @@ global {
 	string show_people <- "Show all people";
 	rgb legend_border_color <- #black;
 	
+	// agent data
+	list<string> name_list;
+	list<point> work_loc_list;
+	list<point> home_loc_list;
+	list<int> population_list;
+	list<int> income_list;
+	
 	init {
 		seed <- 10.0;
 		// load some pre-cooked data
@@ -313,6 +320,13 @@ global {
 		ask blockgroup {do update_current_population;}
 		the_developer.total_rent_at_start <- sum((people where each.live_in_kendall) collect (each.myrent * each.represented_nb_people))*start_rent_coeff;
 		do kendall_statistics;
+		
+		// init agent data
+		name_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.name;
+		work_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
+		work_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
+		population_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.represented_nb_people;
+		income_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.income;
 	}
 	
 	
@@ -385,6 +399,13 @@ global {
 			
 		}
 		do reference_info;
+		
+		// update agent data
+		name_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.name;
+		work_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
+		work_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
+		population_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.represented_nb_people;
+		income_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.income;
 	}
 	
 	reflex do_focus when: is_focused != focus_on_kendall{
