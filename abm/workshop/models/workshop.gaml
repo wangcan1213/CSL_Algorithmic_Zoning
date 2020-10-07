@@ -454,8 +454,7 @@ global {
 //		}
 //		write "nb_people_with_discounted_rent = " + nb_people_with_discounted_rent;
 		write "crt subsidy = " + the_developer.subsidy_this_cycle;
-		if the_developer.subsidy_this_cycle <0 {do pause;}
-		
+//		if the_developer.subsidy_this_cycle < 0 {do pause;}
 	}
 	
 	action load_worker_data {
@@ -1130,7 +1129,9 @@ species developer {
 //		float rent_in_this_cycle <- sum((people where each.live_in_kendall) collect (each.represented_nb_people * each.myrent));
 		float total_rent_base_this_cycle <- sum((landuse where (each.usage='R')) collect (each.rent_base * each.crt_total_pop));
 		float addtional_rent_this_cycle <- (total_rent_base_this_cycle - total_rent_at_start);
-		subsidy_this_cycle <- sum((people where each.live_in_kendall) collect ((each.home_grid.rent_base - each.myrent) * each.represented_nb_people));
+		subsidy_this_cycle <- sum((people where (each.live_in_kendall and (each.myrent < each.home_grid.rent_base))) collect (
+			(each.home_grid.rent_base - each.myrent) * each.represented_nb_people
+		));
 		subsidy_this_cycle <- subsidy_this_cycle * 3;
 		addtional_rent_this_cycle <- addtional_rent_this_cycle * 3;
 		if incentive_policy {
@@ -1143,9 +1144,12 @@ species developer {
 //		write "nb_people_with_discounted_rent = " +nb_people_with_discounted_rent;
 //		write "subsidies = " + subsidy_this_cycle;
 //		write "additional rents = " + addtional_rent_this_cycle;
-		if subsidy_this_cycle < 0 {
-			write "strange !!!Negative subsidy!!!\nsubsidy_this_cycle = " + subsidy_this_cycle;
-		}
+//		if subsidy_this_cycle < 0 {
+//			write "strange !!!Negative subsidy!!!\nsubsidy_this_cycle = " + subsidy_this_cycle;
+//			ask people where (each.live_in_kendall and (each.home_grid.rent_base - each.myrent<0)) {
+//				write "myrent = " + myrent + ", rent_base = " +  home_grid.rent_base;
+//			}
+//		}
 		subsidy_total <- subsidy_total + subsidy_this_cycle;
 		expenditure_total <- expenditure_total + subsidy_this_cycle;
 		revene_detail[cycle]['rent'] <- addtional_rent_this_cycle;
