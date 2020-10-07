@@ -105,6 +105,8 @@ global {
 	list<landuse> incentive_policy_grids <- [];
 	int crt_nb_available_bedrooms_for_less_commuting_discount <- 0;
 	list<people> people_with_discounted_rent <- [];
+	list<landuse> grids_with_top6_potential;
+	
 
 	// performance indices
 	map<string, float> kendall_occupancy <- ['overall'::0.0 ,'small'::0, 'large'::0];
@@ -446,13 +448,13 @@ global {
 			write "name = " + name + ", my_rent = "+round(myrent) + ", grid_rent_base = " + home_grid.rent_base + ", grid = " + home_grid  + ", live_in_kendall = "+live_in_kendall + ", settled_time = "+ settled_time + ", nb_people = " + represented_nb_people;
 		}
 	    */
-//		int nb_people_with_discounted_rent;
-//		ask people where (each.live_in_kendall and each.represented_nb_people>0) {
-//			if myrent < home_grid.rent_base {
-//				nb_people_with_discounted_rent <- nb_people_with_discounted_rent + represented_nb_people;
-//			}
-//		}
-//		write "nb_people_with_discounted_rent = " + nb_people_with_discounted_rent;
+		int nb_people_with_discounted_rent;
+		ask people where (each.live_in_kendall and each.represented_nb_people>0) {
+			if myrent < home_grid.rent_base {
+				nb_people_with_discounted_rent <- nb_people_with_discounted_rent + represented_nb_people;
+			}
+		}
+		write "nb_people_with_discounted_rent = " + nb_people_with_discounted_rent;
 		write "crt subsidy = " + the_developer.subsidy_this_cycle;
 //		if the_developer.subsidy_this_cycle < 0 {do pause;}
 	}
@@ -758,6 +760,7 @@ global {
 		float total_rent_discount_ratio <- rent_discount_ratio_low_inc * rent_discount_ratio_small_scale * rent_discount_ratio_less_commuting;
 		float new_construction_far_shift_max <- new_construction_far_given_incentive_policy(total_rent_discount_ratio);
 		float new_construction_far_shift <- new_construction_far_shift_max * construction_intensity;
+		write "New construction far: " + new_construction_far_shift;
 		if new_construction_far_shift > 0 {
 			ask new_construction_grids {
 				do new_constructions(1.0, new_construction_far_shift);
@@ -891,7 +894,7 @@ global {
 //			write 'name = '+name + ', potential = ' + crt_potential + ', target = ' + target_subgroups;
 //		}
 		list<landuse> grids_sorted_by_potential <- (landuse where (each.usage in ['R', 'vacant'])) sort_by (-each.crt_potential);
-		list<landuse> grids_with_top6_potential;
+//		list<landuse> grids_with_top6_potential;    //set it as global var
 		if grids_sorted_by_potential[0].crt_potential = 0 {
 			grids_with_top6_potential <- 6 among grids_sorted_by_potential;
 		} else {
@@ -922,9 +925,9 @@ global {
 		float new_construction_far_shift_max <- new_construction_far_given_incentive_policy(total_rent_discount_ratio);
 		if total_rent_discount_ratio <= 0.4 {
 			float scale_tmp <- (0.4 / (rent_discount_ratio_less_commuting*rent_discount_ratio_low_inc*rent_discount_ratio_small_scale)) ^ (1/3);
-			rent_discount_ratio_less_commuting <- min(1.0, rent_discount_ratio_less_commuting * scale_tmp);
-			rent_discount_ratio_low_inc <- min(1.0, rent_discount_ratio_low_inc * scale_tmp);
-			rent_discount_ratio_small_scale <- min(1.0, rent_discount_ratio_small_scale * scale_tmp);
+			rent_discount_ratio_less_commuting <- max(min(1.0, rent_discount_ratio_less_commuting * scale_tmp), 0.5);
+			rent_discount_ratio_low_inc <- max(min(1.0, rent_discount_ratio_low_inc * scale_tmp), 0.5);
+			rent_discount_ratio_small_scale <- max(min(1.0, rent_discount_ratio_small_scale * scale_tmp), 0.5);
 		}
 		
 		
@@ -1136,7 +1139,7 @@ species developer {
 		addtional_rent_this_cycle <- addtional_rent_this_cycle * 3;
 		if incentive_policy {
 //			subsidy_this_cycle <- addtional_rent_this_cycle * 0.9 * (1 - rent_discount_ratio_low_inc*rent_discount_ratio_less_commuting*rent_discount_ratio_small_scale);
-			subsidy_this_cycle <- subsidy_this_cycle * 1.75;
+			subsidy_this_cycle <- subsidy_this_cycle * 1.5;
 		}
 //		//debug developer
 //		write "subsidy_this_cycle = " + subsidy_this_cycle;
