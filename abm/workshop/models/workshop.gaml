@@ -324,7 +324,7 @@ global {
 		// init agent data
 		name_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.name;
 		work_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
-		work_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
+		home_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
 		population_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.represented_nb_people;
 		income_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.income;
 	}
@@ -403,7 +403,7 @@ global {
 		// update agent data
 		name_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.name;
 		work_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
-		work_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
+		home_loc_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect (each.work_loc CRS_transform("EPSG:4326"));
 		population_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.represented_nb_people;
 		income_list <- people where (each.live_in_kendall = true or each.work_in_kendall = true) collect each.income;
 	}
@@ -2459,9 +2459,39 @@ experiment gui type: gui {
 				data "Revene" value: the_developer.revene_total color: #green;
 			}
 		}
-//		monitor "Total population" value: sum(people collect (each.represented_nb_people));
-//		monitor "Total population moved" value: sum((people where (each.settled_time<1)) collect (each.represented_nb_people));
-//		inspect name:'Kendall' value:kendall_virtual_block type:agent;
+
+		// Output to XML
+		// for radar chart
+		monitor "normalized_kendall_low_inc_ratio" value: normalized_kendall_low_inc_ratio;
+		monitor "normalized_kendall_diversity" value: normalized_kendall_diversity;
+		monitor "normalized_residence_energy_per_person" value: normalized_residence_energy_per_person;
+		monitor "normalized_mean_commute_distance_decrease" value: normalized_mean_commute_distance_decrease;
+		
+		
+		// for line charts
+		monitor "the_developer.finance" value: the_developer.finance;
+		monitor "the_developer.expenditure_total" value: the_developer.expenditure_total;
+		monitor "the_developer.revene_total" value: the_developer.revene_total;
+		monitor "commute_distance_decrease" value: commute_distance_decrease['mean'];
+		monitor "kendall_virtual_block.crt_total_pop" value: kendall_virtual_block.crt_total_pop;
+		monitor "kendall_virtual_block.crt_low_inc_pop" value: kendall_virtual_block.crt_low_inc_pop;
+		monitor "kendall_virtual_block.crt_high_inc_pop" value: kendall_virtual_block.crt_high_inc_pop;
+		monitor "residence_energy_per_person" value: residence_energy_per_person;
+
+		// dynamic indicators
+		monitor "normalized_rent_discount_ratio_low_inc" value: normalized_rent_discount_ratio_low_inc;
+		monitor "normalized_rent_discount_ratio_small_scale" value: normalized_rent_discount_ratio_small_scale;
+		monitor "normalized_rent_discount_ratio_less_commuting" value: normalized_rent_discount_ratio_less_commuting;
+				
+		// DJ visualization
+		monitor "grids_with_top6_potential" value: grids_with_top6_potential;
+
+		// agent info
+		monitor "Name List" value: name_list;
+		monitor "Work Loc List" value: work_loc_list;
+		monitor "Home Loc List" value: home_loc_list;
+		monitor "Population List" value: population_list;
+		monitor "Income List" value: income_list;
 	}
 	
 }
