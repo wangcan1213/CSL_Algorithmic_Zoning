@@ -1,8 +1,11 @@
 abm/workshop/data_preparing
 abm/workshop/backup
+abm/workshop/models/tmp.gaml
+abm/workshop/doc/tmp.html
 abm/.cache
 abm/.metadata
 abm/.built_in_models_1583244215236
+abm/.built_in_models_1601605394906
 abm/.gama.epf
 abm/.gama_application_workspace
 others
